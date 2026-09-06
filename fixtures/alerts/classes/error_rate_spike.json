@@ -1,0 +1,18 @@
+{
+  "receiver": "faberops",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "BillingApiErrorRateHigh",
+        "service": "billing-api",
+        "severity": "critical",
+        "namespace": "billing"
+      },
+      "annotations": { "summary": "billing-api 5xx responses above 2% of requests over 5m" },
+      "startsAt": "2026-09-06T14:41:00Z",
+      "fingerprint": "a41d0e77b2c95511"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "receiver": "faberops",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "SessionStoreDiskPressure",
+        "service": "session-store",
+        "severity": "warning",
+        "namespace": "auth"
+      },
+      "annotations": { "summary": "session-store node reporting DiskPressure; 94% of volume used" },
+      "startsAt": "2026-09-06T14:41:00Z",
+      "fingerprint": "e6620bd1a8f30042"
+    }
+  ]
+}

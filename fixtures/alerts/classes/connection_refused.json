@@ -1,0 +1,18 @@
+{
+  "receiver": "faberops",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "BillingApiConnectionRefused",
+        "service": "billing-api",
+        "severity": "critical",
+        "namespace": "billing"
+      },
+      "annotations": { "summary": "billing-api cannot reach billing-primary: connection refused" },
+      "startsAt": "2026-09-06T14:41:00Z",
+      "fingerprint": "b93c5511ee2740aa"
+    }
+  ]
+}

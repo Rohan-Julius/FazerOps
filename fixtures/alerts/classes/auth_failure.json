@@ -1,0 +1,18 @@
+{
+  "receiver": "faberops",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "AuthServiceAuthFailures",
+        "service": "auth-service",
+        "severity": "critical",
+        "namespace": "auth"
+      },
+      "annotations": { "summary": "auth-service returning 403 for valid tokens; authorization denied" },
+      "startsAt": "2026-09-06T14:41:00Z",
+      "fingerprint": "c07f2288ab314466"
+    }
+  ]
+}

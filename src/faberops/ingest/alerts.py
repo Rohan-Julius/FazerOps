@@ -21,6 +21,7 @@ from typing import Any
 
 from ..models import Alert
 from ..radius import default_manifest
+from .classify import classify
 
 
 class UnrecognisedPayload(ValueError):
@@ -59,6 +60,11 @@ def _from_alertmanager(payload: dict[str, Any]) -> Alert:
         id=first.get("fingerprint") or labels.get("alertname") or "alertmanager",
         service=_resolve_service(labels.get("service") or labels.get("job"), summary),
         summary=summary,
+        # Handoff §6 classifies over the name *and* the labels. Every label value is
+        # offered as a signal rather than a chosen subset: which label carries the
+        # condition is a convention that differs per alerting rule, and picking one would
+        # be a guess about someone else's naming scheme.
+        alert_class=classify(summary, signals=[labels.get("alertname"), *labels.values()]),
         fired_at=first.get("startsAt"),
         severity=labels.get("severity"),
         payload_shape="alertmanager",
@@ -78,10 +84,17 @@ def _from_cloudwatch(payload: dict[str, Any]) -> Alert:
             named = dimension.get("value") or dimension.get("Value")
             break
 
+    trigger = payload.get("Trigger") or {}
+
     return Alert(
         id=payload.get("AlarmName", "cloudwatch"),
         service=_resolve_service(named, summary),
         summary=summary,
+        # `MetricName` is CloudWatch's equivalent of an alertname — `TargetResponseTime`
+        # classifies where an alarm named after a service alone would not.
+        alert_class=classify(
+            summary, signals=[payload.get("AlarmName"), trigger.get("MetricName")]
+        ),
         # CloudWatch emits `2026-09-06T14:41:00.000+0000` — an offset with no colon, which
         # fromisoformat rejects before Python 3.11 and accepts after. Normalized here so
         # the collector boundary stays the only place timestamps are parsed.
@@ -102,6 +115,9 @@ def _from_pagerduty(payload: dict[str, Any]) -> Alert:
         id=data.get("id") or event.get("id") or "pagerduty",
         service=_resolve_service(service, summary),
         summary=summary,
+        # PagerDuty carries no authored alert name — the title is all there is, so this
+        # shape classifies from free text alone and is the weakest of the three.
+        alert_class=classify(summary),
         fired_at=event.get("occurred_at") or data.get("created_at"),
         severity=data.get("urgency"),
         payload_shape="pagerduty",

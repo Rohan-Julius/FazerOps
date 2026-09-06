@@ -1,0 +1,18 @@
+{
+  "receiver": "faberops",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "BillingApiOOMKilled",
+        "service": "billing-api",
+        "severity": "warning",
+        "namespace": "billing"
+      },
+      "annotations": { "summary": "billing-api container OOMKilled twice in 10m" },
+      "startsAt": "2026-09-06T14:41:00Z",
+      "fingerprint": "d5518ac0f7e29931"
+    }
+  ]
+}

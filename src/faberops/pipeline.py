@@ -24,7 +24,8 @@ from .collectors.base import Collector, CollectorResult
 from .collectors.github import GitHubCollector, ci_status_from
 from .collectors.k8s_audit import K8sAuditCollector
 from .correlation.scoring import score_events
-from .models import Alert, Brief, ChangeEvent, CIStatus, TimeWindow
+from .ledger.store import LedgerStore
+from .models import Alert, Brief, CIStatus, TimeWindow
 
 DEFAULT_WINDOW_HOURS = 4  # Handoff Q3, bounded [1, 24] by the orchestrator's tool schema
 
@@ -58,7 +59,21 @@ async def investigate(
     *,
     hours: int = DEFAULT_WINDOW_HOURS,
     collectors: list[Collector] | None = None,
+    ledger: LedgerStore | None = None,
 ) -> Brief:
+    """Alert in, ranked `Brief` out.
+
+    Collector output goes through the ledger (W9) rather than straight into the scorer.
+    That is one extra hop for an identical candidate set today — the collectors already
+    filter by radius and window — and it is deliberate for two reasons. It deduplicates
+    sources that observe the same mutation, which Helm and the K8s audit log both do. And
+    it makes the ledger the thing the investigation actually reads, so W14b's recurrence
+    feature queries the same store the demo populates instead of a parallel one that only
+    history uses.
+
+    The default ledger is in-memory, so the fixture demo leaves no state on a judge's
+    machine. A caller wanting durable history passes `LedgerStore(path)`.
+    """
     from .radius import resolve  # local import keeps the manifest off the import path
 
     radius = resolve(alert.service)
@@ -67,11 +82,11 @@ async def investigate(
 
     results = await gather_changes(collectors, radius, window)
 
-    events: list[ChangeEvent] = []
+    ledger = ledger if ledger is not None else LedgerStore()
     for result in results:
-        events.extend(result.events)
+        ledger.extend(result.events)
 
-    candidates = score_events(events, alert, radius, window)
+    candidates = score_events(ledger.query(radius, window), alert, radius, window)
 
     github = next((r for r in results if r.source == "github"), None)
     ci_status = (
