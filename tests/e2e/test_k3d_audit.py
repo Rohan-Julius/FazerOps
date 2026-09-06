@@ -12,6 +12,7 @@ Requires the cluster from `scripts/setup_k3d.sh`. Excluded from the CI default s
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
@@ -176,3 +177,47 @@ def test_the_collector_reconstructs_a_diff_from_real_entries(restored_configmap)
     assert event.diff.fields_changed == ["pool.max"]
     assert event.reversible is True
     assert event.inverse_hint["prior_value"] == first
+
+
+def test_the_live_collector_reads_the_real_log_end_to_end(restored_configmap):
+    """W8's live path against a real cluster, with nothing stubbed.
+
+    The unit tests feed the reader a temp file; only this one proves the default log
+    location, the API server's real output and the collector's normalizer line up. It is
+    the closest thing to the demo's live mode that runs without a human at the keyboard.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from faberops.config import Mode
+    from faberops.models import TimeWindow
+    from faberops.radius import ServiceManifest
+
+    before = str(uuid.uuid4().int % 1000)
+    after = str(uuid.uuid4().int % 1000)
+    started = datetime.now(timezone.utc)
+    for value in (before, after):
+        kubectl(
+            "patch", "configmap", CONFIGMAP, "-n", NAMESPACE,
+            "--type", "merge", "-p", json.dumps({"data": {"pool.max": value}}),
+        )
+    wait_for_entry(_configmap_update(after))
+
+    # The window opens after the first edit, so `before` is only reachable as a
+    # prior-state anchor read from outside it — exactly the demo's shape.
+    window = TimeWindow(
+        start=started + timedelta(milliseconds=1),
+        end=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+
+    os.environ["FABEROPS_MODE"] = Mode.LIVE.value
+    try:
+        result = asyncio.run(K8sAuditCollector().fetch(
+            ServiceManifest.load().resolve("billing-api"), window))
+    finally:
+        os.environ["FABEROPS_MODE"] = Mode.FIXTURE.value
+
+    assert result.ok, result.error
+    edits = [e for e in result.events if (e.diff.after or {}).get("pool.max") == after]
+    assert len(edits) == 1, "the live path did not return the edit it just made"
+    assert edits[0].diff.before["pool.max"] == before
+    assert edits[0].reversible is True

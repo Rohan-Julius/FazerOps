@@ -29,6 +29,24 @@ uv sync
 
 Requires no AWS credentials and no network — the default path runs entirely on fixtures.
 
+### Running against a real cluster
+
+```bash
+./scripts/setup_k3d.sh          # k3d + audit policy + the demo workload
+pytest -m cluster               # the cluster-backed tests
+```
+
+`setup_k3d.sh` creates the cluster with `RequestResponse` auditing for ConfigMaps and
+Secrets, which is what makes the demo's before/after diff a real object body rather than
+an assertion. The fixtures under `fixtures/k8s_audit/` are recordings from this cluster,
+not hand-authored payloads — `scripts/capture_audit_fixture.py` regenerates them.
+
+**Disclosed limitation.** The Kubernetes audit log is not exposed through the Kubernetes
+API: the API server writes it to disk on the control-plane node, or ships it to a webhook.
+Live mode reads that file, which `setup_k3d.sh` bind-mounts onto the host. A production
+cluster ships the same JSON to a log sink and the collector would read it from there —
+a swap of one method, not a redesign. It is named here rather than half-built.
+
 ## Safety
 
 Four properties enforced structurally rather than by convention:
