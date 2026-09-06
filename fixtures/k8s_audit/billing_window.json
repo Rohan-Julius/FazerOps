@@ -3,25 +3,31 @@
     "kind": "Event",
     "apiVersion": "audit.k8s.io/v1",
     "level": "RequestResponse",
-    "auditID": "3f2a1c88-0b41-4e6d-9f2a-1c880b414e6d",
+    "auditID": "1aa5e1ee-8703-4e05-b978-c80706482f54",
     "stage": "ResponseComplete",
-    "requestURI": "/api/v1/namespaces/billing/configmaps/billing-api-config",
+    "requestURI": "/api/v1/namespaces/billing/configmaps/billing-api-config?fieldManager=kubectl-replace&fieldValidation=Strict",
     "verb": "update",
     "user": {
       "username": "dinesh@faber-demo.io",
       "groups": [
         "system:authenticated"
-      ]
+      ],
+      "extra": {
+        "authentication.kubernetes.io/credential-id": [
+          "X509SHA256=feabff8f26cae0cbaa090a8df35b8d9bb7afc7eaf12b313386036068424f820c"
+        ]
+      }
     },
     "sourceIPs": [
-      "10.42.0.19"
+      "172.18.0.4"
     ],
-    "userAgent": "kubectl/v1.31.4 (darwin/arm64) kubernetes/a1b2c3d",
+    "userAgent": "kubectl/v1.34.1 (darwin/arm64) kubernetes/93248f9",
     "objectRef": {
       "resource": "configmaps",
       "namespace": "billing",
       "name": "billing-api-config",
-      "apiVersion": "v1"
+      "apiVersion": "v1",
+      "resourceVersion": "707"
     },
     "responseStatus": {
       "metadata": {},
@@ -32,7 +38,8 @@
       "apiVersion": "v1",
       "metadata": {
         "name": "billing-api-config",
-        "namespace": "billing"
+        "namespace": "billing",
+        "resourceVersion": "707"
       },
       "data": {
         "pool.max": "100",
@@ -46,7 +53,37 @@
       "metadata": {
         "name": "billing-api-config",
         "namespace": "billing",
-        "resourceVersion": "48120"
+        "uid": "ac03905c-615e-4351-b927-527ca0125f51",
+        "resourceVersion": "7403",
+        "creationTimestamp": "2026-09-06T10:36:48Z",
+        "managedFields": [
+          {
+            "manager": "kubectl-client-side-apply",
+            "operation": "Update",
+            "apiVersion": "v1",
+            "time": "2026-09-06T10:36:48Z",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": {
+              "f:data": {
+                ".": {},
+                "f:pool.min": {},
+                "f:timeout": {}
+              }
+            }
+          },
+          {
+            "manager": "kubectl-patch",
+            "operation": "Update",
+            "apiVersion": "v1",
+            "time": "2026-09-06T10:37:09Z",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": {
+              "f:data": {
+                "f:pool.max": {}
+              }
+            }
+          }
+        ]
       },
       "data": {
         "pool.max": "100",
@@ -54,77 +91,133 @@
         "timeout": "30s"
       }
     },
-    "requestReceivedTimestamp": "2026-09-06T09:12:04.881204Z",
-    "responseCompleteTimestamp": "2026-09-06T09:12:04.902117Z",
+    "requestReceivedTimestamp": "2026-09-06T09:12:04.510079Z",
+    "stageTimestamp": "2026-09-06T09:12:04.512926Z",
     "annotations": {
-      "authorization.k8s.io/decision": "allow"
+      "authorization.k8s.io/decision": "allow",
+      "authorization.k8s.io/reason": "RBAC: allowed by RoleBinding \"faberops-capture-dinesh/billing\" of Role \"faberops-capture-configmap-editor\" to User \"dinesh@faber-demo.io\""
     }
   },
   {
     "kind": "Event",
     "apiVersion": "audit.k8s.io/v1",
     "level": "RequestResponse",
-    "auditID": "9c14e7b2-55af-4a19-8e30-2d61f0aa77bc",
+    "auditID": "017e86e7-a5a9-4635-9cfd-cbda5b1cd225",
     "stage": "ResponseComplete",
-    "requestURI": "/api/v1/namespaces/billing/secrets/billing-api-db",
+    "requestURI": "/api/v1/namespaces/billing/secrets/billing-api-db?fieldManager=kubectl-replace&fieldValidation=Strict",
     "verb": "update",
     "user": {
       "username": "system:serviceaccount:ci:deployer",
+      "uid": "82f4c5ed-b1e7-443c-a72d-ec090870e404",
       "groups": [
         "system:serviceaccounts",
+        "system:serviceaccounts:ci",
         "system:authenticated"
-      ]
+      ],
+      "extra": {
+        "authentication.kubernetes.io/credential-id": [
+          "JTI=00d4e067-d239-428c-8483-65864915317e"
+        ]
+      }
     },
     "sourceIPs": [
-      "10.42.0.7"
+      "172.18.0.4"
     ],
-    "userAgent": "helm/v3.16.2",
+    "userAgent": "kubectl/v1.34.1 (darwin/arm64) kubernetes/93248f9",
     "objectRef": {
       "resource": "secrets",
       "namespace": "billing",
       "name": "billing-api-db",
-      "apiVersion": "v1"
+      "apiVersion": "v1",
+      "resourceVersion": "485"
     },
     "responseStatus": {
       "metadata": {},
       "code": 200
+    },
+    "requestObject": {
+      "kind": "Secret",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "billing-api-db",
+        "namespace": "billing",
+        "resourceVersion": "485"
+      },
+      "data": {
+        "password": "c3VwZXJzZWNyZXQtcm90YXRlZA=="
+      },
+      "type": "Opaque"
     },
     "responseObject": {
       "kind": "Secret",
       "apiVersion": "v1",
       "metadata": {
         "name": "billing-api-db",
-        "namespace": "billing"
+        "namespace": "billing",
+        "uid": "1cf1209d-1dc6-4a1d-8031-350509c7443c",
+        "resourceVersion": "7405",
+        "creationTimestamp": "2026-09-06T10:36:48Z",
+        "managedFields": [
+          {
+            "manager": "kubectl-client-side-apply",
+            "operation": "Update",
+            "apiVersion": "v1",
+            "time": "2026-09-06T10:36:48Z",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": {
+              "f:data": {},
+              "f:type": {}
+            }
+          },
+          {
+            "manager": "kubectl-replace",
+            "operation": "Update",
+            "apiVersion": "v1",
+            "time": "2026-09-06T16:35:37Z",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": {
+              "f:data": {
+                "f:password": {}
+              }
+            }
+          }
+        ]
       },
-      "type": "Opaque",
       "data": {
         "password": "c3VwZXJzZWNyZXQtcm90YXRlZA=="
-      }
+      },
+      "type": "Opaque"
     },
-    "requestReceivedTimestamp": "2026-09-06T11:30:02.140933Z",
-    "responseCompleteTimestamp": "2026-09-06T11:30:02.171004Z",
+    "requestReceivedTimestamp": "2026-09-06T11:30:02.026107Z",
+    "stageTimestamp": "2026-09-06T11:30:02.032980Z",
     "annotations": {
-      "authorization.k8s.io/decision": "allow"
+      "authorization.k8s.io/decision": "allow",
+      "authorization.k8s.io/reason": "RBAC: allowed by RoleBinding \"faberops-capture-deployer/billing\" of Role \"faberops-capture-secret-rotator\" to ServiceAccount \"deployer/ci\""
     }
   },
   {
     "kind": "Event",
     "apiVersion": "audit.k8s.io/v1",
     "level": "RequestResponse",
-    "auditID": "b7d0e441-2c6f-4b58-a0d3-77e1c9048f2a",
+    "auditID": "b46cad11-1bfa-4ca1-8ea7-4cea27b62157",
     "stage": "ResponseComplete",
-    "requestURI": "/api/v1/namespaces/auth/configmaps/auth-service-config",
+    "requestURI": "/api/v1/namespaces/auth/configmaps/auth-service-config?fieldManager=kubectl-patch",
     "verb": "patch",
     "user": {
       "username": "priya@faber-demo.io",
       "groups": [
         "system:authenticated"
-      ]
+      ],
+      "extra": {
+        "authentication.kubernetes.io/credential-id": [
+          "X509SHA256=412e166624ab66780ac102b3b3eb005ba27321712ec5fc707e1d8477bbfb973d"
+        ]
+      }
     },
     "sourceIPs": [
-      "10.42.0.31"
+      "172.18.0.4"
     ],
-    "userAgent": "kubectl/v1.31.4 (darwin/arm64) kubernetes/a1b2c3d",
+    "userAgent": "kubectl/v1.34.1 (darwin/arm64) kubernetes/93248f9",
     "objectRef": {
       "resource": "configmaps",
       "namespace": "auth",
@@ -135,82 +228,142 @@
       "metadata": {},
       "code": 200
     },
+    "requestObject": {
+      "data": {
+        "session.ttl": "7200"
+      }
+    },
     "responseObject": {
       "kind": "ConfigMap",
       "apiVersion": "v1",
       "metadata": {
         "name": "auth-service-config",
-        "namespace": "auth"
+        "namespace": "auth",
+        "uid": "69d1ee41-0237-4055-9a67-6d49ded3b928",
+        "resourceVersion": "7406",
+        "creationTimestamp": "2026-09-06T10:36:48Z",
+        "annotations": {
+          "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"data\":{\"issuer\":\"auth.faber-demo.internal\",\"session.ttl\":\"3600\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{},\"name\":\"auth-service-config\",\"namespace\":\"auth\"}}\n"
+        },
+        "managedFields": [
+          {
+            "manager": "kubectl-client-side-apply",
+            "operation": "Update",
+            "apiVersion": "v1",
+            "time": "2026-09-06T10:36:48Z",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": {
+              "f:data": {
+                ".": {},
+                "f:issuer": {}
+              },
+              "f:metadata": {
+                "f:annotations": {
+                  ".": {},
+                  "f:kubectl.kubernetes.io/last-applied-configuration": {}
+                }
+              }
+            }
+          },
+          {
+            "manager": "kubectl-patch",
+            "operation": "Update",
+            "apiVersion": "v1",
+            "time": "2026-09-06T16:35:37Z",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": {
+              "f:data": {
+                "f:session.ttl": {}
+              }
+            }
+          }
+        ]
       },
       "data": {
-        "token.ttl": "3600s",
-        "issuer": "https://auth.faber-demo.io"
+        "issuer": "auth.faber-demo.internal",
+        "session.ttl": "7200"
       }
     },
-    "requestReceivedTimestamp": "2026-09-06T12:47:33.552018Z",
-    "responseCompleteTimestamp": "2026-09-06T12:47:33.588740Z",
+    "requestReceivedTimestamp": "2026-09-06T12:47:33.499921Z",
+    "stageTimestamp": "2026-09-06T12:47:33.505000Z",
     "annotations": {
-      "authorization.k8s.io/decision": "allow"
+      "authorization.k8s.io/decision": "allow",
+      "authorization.k8s.io/reason": "RBAC: allowed by RoleBinding \"faberops-capture-priya/auth\" of Role \"faberops-capture-configmap-editor\" to User \"priya@faber-demo.io\""
     }
   },
   {
     "kind": "Event",
     "apiVersion": "audit.k8s.io/v1",
     "level": "Metadata",
-    "auditID": "e50c33a7-9182-4d47-bb61-0a4c25d9e118",
+    "auditID": "a5f14c7f-c2a1-42a1-89b6-9419c7e2c1d2",
     "stage": "ResponseComplete",
-    "requestURI": "/apis/apps/v1/namespaces/billing/deployments/billing-api",
-    "verb": "update",
+    "requestURI": "/apis/apps/v1/namespaces/billing/deployments/billing-api?fieldManager=kubectl-patch",
+    "verb": "patch",
     "user": {
       "username": "system:serviceaccount:kube-system:generic-garbage-collector",
+      "uid": "ee9b2d23-b2f5-410d-afa4-fb79a5aaa1ec",
       "groups": [
+        "system:serviceaccounts",
         "system:serviceaccounts:kube-system",
         "system:authenticated"
-      ]
+      ],
+      "extra": {
+        "authentication.kubernetes.io/credential-id": [
+          "JTI=2330d2e1-c2ad-4608-902e-2fccc6c86105"
+        ]
+      }
     },
     "sourceIPs": [
-      "10.42.0.1"
+      "172.18.0.4"
     ],
-    "userAgent": "kube-controller-manager/v1.31.4",
+    "userAgent": "kubectl/v1.34.1 (darwin/arm64) kubernetes/93248f9",
     "objectRef": {
       "resource": "deployments",
       "namespace": "billing",
       "name": "billing-api",
-      "apiVersion": "apps/v1"
+      "apiGroup": "apps",
+      "apiVersion": "v1"
     },
     "responseStatus": {
       "metadata": {},
       "code": 200
     },
-    "requestReceivedTimestamp": "2026-09-06T13:55:10.004221Z",
-    "responseCompleteTimestamp": "2026-09-06T13:55:10.019880Z",
+    "requestReceivedTimestamp": "2026-09-06T13:55:10.980272Z",
+    "stageTimestamp": "2026-09-06T13:55:11.000349Z",
     "annotations": {
-      "authorization.k8s.io/decision": "allow"
+      "authorization.k8s.io/decision": "allow",
+      "authorization.k8s.io/reason": "RBAC: allowed by ClusterRoleBinding \"system:controller:generic-garbage-collector\" of ClusterRole \"system:controller:generic-garbage-collector\" to ServiceAccount \"generic-garbage-collector/kube-system\""
     }
   },
   {
     "kind": "Event",
     "apiVersion": "audit.k8s.io/v1",
     "level": "RequestResponse",
-    "auditID": "1a9f4d20-6ec3-42bb-9d75-8f01a4c6b3ee",
+    "auditID": "3e2bdd8d-9078-4c2e-bc43-3ecd2eb5a2c1",
     "stage": "ResponseComplete",
-    "requestURI": "/api/v1/namespaces/billing/configmaps/billing-api-config",
+    "requestURI": "/api/v1/namespaces/billing/configmaps/billing-api-config?fieldManager=kubectl-replace&fieldValidation=Strict",
     "verb": "update",
     "user": {
       "username": "dinesh@faber-demo.io",
       "groups": [
         "system:authenticated"
-      ]
+      ],
+      "extra": {
+        "authentication.kubernetes.io/credential-id": [
+          "X509SHA256=feabff8f26cae0cbaa090a8df35b8d9bb7afc7eaf12b313386036068424f820c"
+        ]
+      }
     },
     "sourceIPs": [
-      "10.42.0.19"
+      "172.18.0.4"
     ],
-    "userAgent": "kubectl/v1.31.4 (darwin/arm64) kubernetes/a1b2c3d",
+    "userAgent": "kubectl/v1.34.1 (darwin/arm64) kubernetes/93248f9",
     "objectRef": {
       "resource": "configmaps",
       "namespace": "billing",
       "name": "billing-api-config",
-      "apiVersion": "v1"
+      "apiVersion": "v1",
+      "resourceVersion": "7403"
     },
     "responseStatus": {
       "metadata": {},
@@ -221,7 +374,8 @@
       "apiVersion": "v1",
       "metadata": {
         "name": "billing-api-config",
-        "namespace": "billing"
+        "namespace": "billing",
+        "resourceVersion": "7403"
       },
       "data": {
         "pool.max": "20",
@@ -235,7 +389,37 @@
       "metadata": {
         "name": "billing-api-config",
         "namespace": "billing",
-        "resourceVersion": "51733"
+        "uid": "ac03905c-615e-4351-b927-527ca0125f51",
+        "resourceVersion": "7410",
+        "creationTimestamp": "2026-09-06T10:36:48Z",
+        "managedFields": [
+          {
+            "manager": "kubectl-client-side-apply",
+            "operation": "Update",
+            "apiVersion": "v1",
+            "time": "2026-09-06T10:36:48Z",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": {
+              "f:data": {
+                ".": {},
+                "f:pool.min": {},
+                "f:timeout": {}
+              }
+            }
+          },
+          {
+            "manager": "kubectl-replace",
+            "operation": "Update",
+            "apiVersion": "v1",
+            "time": "2026-09-06T16:35:38Z",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": {
+              "f:data": {
+                "f:pool.max": {}
+              }
+            }
+          }
+        ]
       },
       "data": {
         "pool.max": "20",
@@ -243,17 +427,18 @@
         "timeout": "30s"
       }
     },
-    "requestReceivedTimestamp": "2026-09-06T14:03:11.417662Z",
-    "responseCompleteTimestamp": "2026-09-06T14:03:11.449201Z",
+    "requestReceivedTimestamp": "2026-09-06T14:03:11.507709Z",
+    "stageTimestamp": "2026-09-06T14:03:11.510465Z",
     "annotations": {
-      "authorization.k8s.io/decision": "allow"
+      "authorization.k8s.io/decision": "allow",
+      "authorization.k8s.io/reason": "RBAC: allowed by RoleBinding \"faberops-capture-dinesh/billing\" of Role \"faberops-capture-configmap-editor\" to User \"dinesh@faber-demo.io\""
     }
   },
   {
     "kind": "Event",
     "apiVersion": "audit.k8s.io/v1",
-    "level": "Metadata",
-    "auditID": "cc0b8f19-77d4-4a02-91be-6e3ab5f7d100",
+    "level": "RequestResponse",
+    "auditID": "66954ccf-71d7-4015-bc89-8075f7e486e1",
     "stage": "ResponseComplete",
     "requestURI": "/api/v1/namespaces/billing/configmaps/billing-api-config",
     "verb": "get",
@@ -261,12 +446,17 @@
       "username": "dinesh@faber-demo.io",
       "groups": [
         "system:authenticated"
-      ]
+      ],
+      "extra": {
+        "authentication.kubernetes.io/credential-id": [
+          "X509SHA256=feabff8f26cae0cbaa090a8df35b8d9bb7afc7eaf12b313386036068424f820c"
+        ]
+      }
     },
     "sourceIPs": [
-      "10.42.0.19"
+      "172.18.0.4"
     ],
-    "userAgent": "kubectl/v1.31.4 (darwin/arm64) kubernetes/a1b2c3d",
+    "userAgent": "kubectl/v1.34.1 (darwin/arm64) kubernetes/93248f9",
     "objectRef": {
       "resource": "configmaps",
       "namespace": "billing",
@@ -277,10 +467,55 @@
       "metadata": {},
       "code": 200
     },
-    "requestReceivedTimestamp": "2026-09-06T14:20:47.310556Z",
-    "responseCompleteTimestamp": "2026-09-06T14:20:47.318902Z",
+    "responseObject": {
+      "kind": "ConfigMap",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "uid": "ac03905c-615e-4351-b927-527ca0125f51",
+        "resourceVersion": "7410",
+        "creationTimestamp": "2026-09-06T10:36:48Z",
+        "managedFields": [
+          {
+            "manager": "kubectl-client-side-apply",
+            "operation": "Update",
+            "apiVersion": "v1",
+            "time": "2026-09-06T10:36:48Z",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": {
+              "f:data": {
+                ".": {},
+                "f:pool.min": {},
+                "f:timeout": {}
+              }
+            }
+          },
+          {
+            "manager": "kubectl-replace",
+            "operation": "Update",
+            "apiVersion": "v1",
+            "time": "2026-09-06T16:35:38Z",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": {
+              "f:data": {
+                "f:pool.max": {}
+              }
+            }
+          }
+        ]
+      },
+      "data": {
+        "pool.max": "20",
+        "pool.min": "5",
+        "timeout": "30s"
+      }
+    },
+    "requestReceivedTimestamp": "2026-09-06T14:20:47.982738Z",
+    "stageTimestamp": "2026-09-06T14:20:47.986947Z",
     "annotations": {
-      "authorization.k8s.io/decision": "allow"
+      "authorization.k8s.io/decision": "allow",
+      "authorization.k8s.io/reason": "RBAC: allowed by RoleBinding \"faberops-capture-dinesh/billing\" of Role \"faberops-capture-configmap-editor\" to User \"dinesh@faber-demo.io\""
     }
   }
 ]
