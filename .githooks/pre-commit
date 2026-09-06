@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# W1a — the last line of defence before a credential reaches a public repo.
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+#
+# Scans staged content only, so it catches the secret you are about to commit rather than
+# one already in history (CI's gitleaks job covers history).
+set -euo pipefail
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --no-banner --redact --exit-code 1 || {
+    echo ""
+    echo "gitleaks found a credential in staged content. Nothing was committed."
+    echo "Remove it, then re-stage. Do not use --no-verify: the repo goes public."
+    exit 1
+  }
+else
+  echo "warning: gitleaks not installed (brew install gitleaks) — skipping secret scan" >&2
+fi
+
+# The repo is public and .DS_Store leaks directory structure and local paths.
+if git diff --cached --name-only | grep -qE '(^|/)\.DS_Store$'; then
+  echo "refusing to commit .DS_Store — it is gitignored for a reason" >&2
+  exit 1
+fi

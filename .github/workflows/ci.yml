@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+# The runner has no AWS credentials and no cluster. That is the point: this workflow is
+# the standing proof that the fixture path needs neither, so a judge cloning the repo
+# gets the same result CI does.
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      FABEROPS_MODE: fixture
+      FABEROPS_LLM: stub
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - run: uv sync --dev
+
+      - name: Zero-credential, zero-network suite
+        run: uv run pytest -m "not cluster" -q
+
+      - name: Layer seam (plan §3.5 — never allowed to go red)
+        run: uv run pytest tests/integration/test_layer_seam.py -q
+
+      - name: Demo runs end to end on a clean checkout
+        run: ./scripts/run_demo.sh
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks scans history, not just the tip
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --dev
+      - run: uv run pytest tests/test_no_secrets.py -q
+
+      - name: gitleaks
+        run: |
+          curl -sSfL -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks detect --no-banner --redact --exit-code 1

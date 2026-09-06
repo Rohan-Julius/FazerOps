@@ -1,0 +1,35 @@
+# Secrets — W1a. Nothing matching these may ever be tracked; tests/test_no_secrets.py enforces it.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials
+.aws/
+*.kubeconfig
+docs/
+PLAN_FABEROPS.md
+CLAUDE.md
+
+# Runtime state
+.faberops/
+ledger.db
+*.log
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# macOS
+.DS_Store
+
+# Media — backup takes are large and are uploaded, not committed
+media/*.mp4
+media/*.mov

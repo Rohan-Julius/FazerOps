@@ -1,0 +1,32 @@
+# W1a. The default ruleset, plus a narrow allowlist for three deliberate non-secrets.
+#
+# Each entry below is here because the string is *supposed* to look like a credential.
+# Nothing is allowlisted to make a real finding go away — if this file ever grows an entry
+# whose justification is "it kept failing", that is the bug, not the scanner.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Build artifacts and fixtures that exist precisely to resemble credentials"
+
+paths = [
+  # Compiled bytecode mirrors the source it came from, including this repo's synthetic
+  # credential samples. Gitignored, so it is never committed; it only appears under
+  # `gitleaks detect --no-git`, which scans the working tree.
+  '''__pycache__''',
+  '''\.venv/''',
+
+  # tests/test_no_secrets.py carries one synthetic sample per credential pattern, so that
+  # a regex which matches nothing cannot pass the scan for the wrong reason. Allowlisting
+  # the file is what lets that test exist at all.
+  '''tests/test_no_secrets\.py''',
+]
+
+regexes = [
+  # fixtures/k8s_audit/billing_window.json — a fake base64 Secret value, present to prove
+  # the K8s collector redacts secret material rather than putting it in a Slack message.
+  # `test_secret_values_are_redacted_but_the_rotation_is_still_reported` asserts the
+  # collector never emits it.
+  '''c3VwZXJzZWNyZXQtcm90YXRlZA==''',
+]
