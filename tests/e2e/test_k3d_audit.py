@@ -22,15 +22,15 @@ from pathlib import Path
 
 import pytest
 
-from faberops.collectors.k8s_audit import K8sAuditCollector
+from fazerops.collectors.k8s_audit import K8sAuditCollector
 
 pytestmark = pytest.mark.cluster
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CLUSTER = os.environ.get("FABEROPS_CLUSTER", "faberops")
+CLUSTER = os.environ.get("FAZEROPS_CLUSTER", "fazerops")
 CONTEXT = f"k3d-{CLUSTER}"
 AUDIT_LOG = Path(
-    os.environ.get("FABEROPS_AUDIT_DIR", str(REPO_ROOT / ".k3d" / "audit"))
+    os.environ.get("FAZEROPS_AUDIT_DIR", str(REPO_ROOT / ".k3d" / "audit"))
 ) / "audit.log"
 
 NAMESPACE = "billing"
@@ -137,7 +137,7 @@ def test_other_resources_stay_at_metadata_level():
     the demo's fixture would be unreadable."""
     kubectl(
         "annotate", "deployment", "billing-api", "-n", NAMESPACE,
-        f"faberops.dev/probe={uuid.uuid4().hex[:8]}", "--overwrite",
+        f"fazerops.dev/probe={uuid.uuid4().hex[:8]}", "--overwrite",
     )
 
     entry = wait_for_entry(
@@ -188,9 +188,9 @@ def test_the_live_collector_reads_the_real_log_end_to_end(restored_configmap):
     """
     from datetime import datetime, timedelta, timezone
 
-    from faberops.config import Mode
-    from faberops.models import TimeWindow
-    from faberops.radius import ServiceManifest
+    from fazerops.config import Mode
+    from fazerops.models import TimeWindow
+    from fazerops.radius import ServiceManifest
 
     before = str(uuid.uuid4().int % 1000)
     after = str(uuid.uuid4().int % 1000)
@@ -209,12 +209,12 @@ def test_the_live_collector_reads_the_real_log_end_to_end(restored_configmap):
         end=datetime.now(timezone.utc) + timedelta(minutes=1),
     )
 
-    os.environ["FABEROPS_MODE"] = Mode.LIVE.value
+    os.environ["FAZEROPS_MODE"] = Mode.LIVE.value
     try:
         result = asyncio.run(K8sAuditCollector().fetch(
             ServiceManifest.load().resolve("billing-api"), window))
     finally:
-        os.environ["FABEROPS_MODE"] = Mode.FIXTURE.value
+        os.environ["FAZEROPS_MODE"] = Mode.FIXTURE.value
 
     assert result.ok, result.error
     edits = [e for e in result.events if (e.diff.after or {}).get("pool.max") == after]

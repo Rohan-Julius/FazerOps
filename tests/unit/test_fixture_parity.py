@@ -14,9 +14,9 @@ from typing import Any
 
 import pytest
 
-from faberops.collectors.base import BaseCollector, Collector, CollectorResult
-from faberops.models import BlastRadius, ChangeEvent, ResourceRef, TimeWindow
-from faberops.ledger.normalize import blast_radius_keys, normalize_action, normalize_actor
+from fazerops.collectors.base import BaseCollector, Collector, CollectorResult
+from fazerops.models import BlastRadius, ChangeEvent, ResourceRef, TimeWindow
+from fazerops.ledger.normalize import blast_radius_keys, normalize_action, normalize_actor
 
 ALERT_TIME = datetime(2026, 9, 6, 14, 41, tzinfo=timezone.utc)
 WINDOW = TimeWindow(start=ALERT_TIME - timedelta(hours=4), end=ALERT_TIME)
@@ -76,7 +76,7 @@ class _ReferenceCollector(BaseCollector):
 
 @pytest.fixture
 def fixture_root(tmp_path, monkeypatch):
-    monkeypatch.setattr("faberops.collectors.base.FIXTURE_ROOT", tmp_path)
+    monkeypatch.setattr("fazerops.collectors.base.FIXTURE_ROOT", tmp_path)
     return tmp_path
 
 
@@ -91,10 +91,10 @@ async def test_both_modes_produce_identically_shaped_events(fixture_root, monkey
     payloads = [_payload("billing-api-config", "2026-09-06T14:03:11.123456Z")]
     _write_fixture(fixture_root, payloads)
 
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
     from_fixture = await _ReferenceCollector().fetch(RADIUS, WINDOW)
 
-    monkeypatch.setenv("FABEROPS_MODE", "live")
+    monkeypatch.setenv("FAZEROPS_MODE", "live")
     live_collector = _ReferenceCollector(live_payloads=payloads)
     from_live = await live_collector.fetch(RADIUS, WINDOW)
 
@@ -107,7 +107,7 @@ async def test_both_modes_produce_identically_shaped_events(fixture_root, monkey
 async def test_fixture_mode_never_calls_the_live_path(fixture_root, monkeypatch):
     """The zero-credential promise depends on this being structural, not remembered."""
     _write_fixture(fixture_root, [_payload("billing-api-config", "2026-09-06T14:03:11Z")])
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
 
     collector = _ReferenceCollector(live_payloads=[])
     await collector.fetch(RADIUS, WINDOW)
@@ -116,7 +116,7 @@ async def test_fixture_mode_never_calls_the_live_path(fixture_root, monkeypatch)
 
 
 async def test_events_outside_the_window_are_dropped(fixture_root, monkeypatch):
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
     _write_fixture(
         fixture_root,
         [
@@ -131,7 +131,7 @@ async def test_events_outside_the_window_are_dropped(fixture_root, monkeypatch):
 async def test_the_window_end_is_exclusive(fixture_root, monkeypatch):
     """Half-open `[start, end)`. An inclusive end double-counts an event landing exactly
     on the alert timestamp."""
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
     _write_fixture(fixture_root, [_payload("billing-api-config", "2026-09-06T14:41:00Z")])
     result = await _ReferenceCollector().fetch(RADIUS, WINDOW)
     assert result.events == []
@@ -139,7 +139,7 @@ async def test_the_window_end_is_exclusive(fixture_root, monkeypatch):
 
 async def test_events_outside_the_blast_radius_are_dropped(fixture_root, monkeypatch):
     """Project isolation: events outside the radius are never returned."""
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
     _write_fixture(
         fixture_root,
         [
@@ -154,7 +154,7 @@ async def test_events_outside_the_blast_radius_are_dropped(fixture_root, monkeyp
 async def test_events_are_returned_in_chronological_order(fixture_root, monkeypatch):
     """The brief renders a timeline. Unordered events make the causal story unreadable
     even when the ranking is right."""
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
     _write_fixture(
         fixture_root,
         [
@@ -171,7 +171,7 @@ async def test_a_missing_fixture_directory_is_an_empty_source_not_an_error(
     fixture_root, monkeypatch
 ):
     """A collector whose fixtures do not exist yet must not break the three that do."""
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
     result = await _ReferenceCollector().fetch(RADIUS, WINDOW)
     assert result.ok is True
     assert result.events == []
@@ -180,7 +180,7 @@ async def test_a_missing_fixture_directory_is_an_empty_source_not_an_error(
 async def test_a_failing_source_degrades_the_brief_rather_than_raising(monkeypatch):
     """Collectors run as nodes in one Strands Graph batch (plan §3.2). An exception there
     surfaces as an opaque graph failure and takes the whole brief with it."""
-    monkeypatch.setenv("FABEROPS_MODE", "live")
+    monkeypatch.setenv("FAZEROPS_MODE", "live")
 
     class _Broken(_ReferenceCollector):
         async def _fetch_live(self, radius, window):
@@ -195,7 +195,7 @@ async def test_a_failing_source_degrades_the_brief_rather_than_raising(monkeypat
 async def test_live_mode_is_not_silently_implemented_by_the_base_class(monkeypatch):
     """A collector with no live path must say so, not return an empty list that reads as
     'nothing changed'."""
-    monkeypatch.setenv("FABEROPS_MODE", "live")
+    monkeypatch.setenv("FAZEROPS_MODE", "live")
 
     class _FixtureOnly(BaseCollector):
         source = "helm"

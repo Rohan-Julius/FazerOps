@@ -40,9 +40,9 @@ from ..models import BlastRadius, ChangeEvent, Diff, NormalizedAction, ResourceR
 from .base import BaseCollector
 
 # k3d writes the audit log here via the bind mount in `scripts/setup_k3d.sh`. Overridable
-# because a cluster created with a different `FABEROPS_AUDIT_DIR` puts it elsewhere, and
+# because a cluster created with a different `FAZEROPS_AUDIT_DIR` puts it elsewhere, and
 # because a production deployment reads it from a log sink entirely.
-AUDIT_LOG_ENV = "FABEROPS_K8S_AUDIT_LOG"
+AUDIT_LOG_ENV = "FAZEROPS_K8S_AUDIT_LOG"
 DEFAULT_AUDIT_LOG = Path(__file__).resolve().parents[3] / ".k3d" / "audit" / "audit.log"
 
 # Handoff §5: a change ledger records mutations. A ledger that records reads is a log.

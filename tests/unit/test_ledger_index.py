@@ -12,8 +12,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from faberops.ledger.store import LedgerStore
-from faberops.models import Actor, BlastRadius, ChangeEvent, ResourceRef, TimeWindow
+from fazerops.ledger.store import LedgerStore
+from fazerops.models import Actor, BlastRadius, ChangeEvent, ResourceRef, TimeWindow
 
 ALERT_TIME = datetime(2026, 9, 6, 14, 41, tzinfo=timezone.utc)
 WINDOW = TimeWindow(start=ALERT_TIME - timedelta(hours=4), end=ALERT_TIME)

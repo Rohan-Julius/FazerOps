@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
-from faberops.models import (
+from fazerops.models import (
     Actor,
     Alert,
     AlertClass,

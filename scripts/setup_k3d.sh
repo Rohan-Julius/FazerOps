@@ -16,9 +16,9 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CLUSTER="${FABEROPS_CLUSTER:-faberops}"
+CLUSTER="${FAZEROPS_CLUSTER:-fazerops}"
 POLICY_FILE="$REPO_ROOT/config/k8s/audit-policy.yaml"
-AUDIT_DIR="${FABEROPS_AUDIT_DIR:-$REPO_ROOT/.k3d/audit}"
+AUDIT_DIR="${FAZEROPS_AUDIT_DIR:-$REPO_ROOT/.k3d/audit}"
 
 # Where the policy and the log live *inside* the server container.
 POLICY_IN_CONTAINER="/var/lib/rancher/k3s/server/audit-policy.yaml"

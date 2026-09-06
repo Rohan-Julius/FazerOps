@@ -8,11 +8,11 @@ credentials
 .aws/
 *.kubeconfig
 docs/
-PLAN_FABEROPS.md
+PLAN_FAZEROPS.md
 CLAUDE.md
 
 # Runtime state
-.faberops/
+.fazerops/
 ledger.db
 *.log
 

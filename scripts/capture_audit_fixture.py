@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CLUSTER = "faberops"
+CLUSTER = "fazerops"
 CONTEXT = f"k3d-{CLUSTER}"
 AUDIT_LOG = REPO_ROOT / ".k3d" / "audit" / "audit.log"
 FIXTURE = REPO_ROOT / "fixtures" / "k8s_audit" / "billing_window.json"
@@ -122,7 +122,7 @@ def mint_client_certificate(username: str, workdir: Path, server: str, ca_file: 
     run(["openssl", "req", "-newkey", "rsa:2048", "-nodes",
          "-keyout", str(key), "-out", str(csr), "-subj", f"/CN={username}"])
 
-    csr_name = f"faberops-capture-{slug}"
+    csr_name = f"fazerops-capture-{slug}"
     kubectl("delete", "csr", csr_name, "--ignore-not-found")
     kubectl("apply", "-f", "-", stdin=json.dumps({
         "apiVersion": "certificates.k8s.io/v1",
@@ -170,17 +170,17 @@ def grant_rbac() -> None:
             {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "ci"}},
             {"apiVersion": "v1", "kind": "ServiceAccount",
              "metadata": {"name": "deployer", "namespace": "ci"}},
-            _role("billing", "faberops-capture-configmap-editor", "configmaps",
+            _role("billing", "fazerops-capture-configmap-editor", "configmaps",
                   ["get", "list", "update", "patch"]),
-            _binding("billing", "faberops-capture-dinesh", "faberops-capture-configmap-editor",
+            _binding("billing", "fazerops-capture-dinesh", "fazerops-capture-configmap-editor",
                      {"kind": "User", "name": DINESH, "apiGroup": "rbac.authorization.k8s.io"}),
-            _role("billing", "faberops-capture-secret-rotator", "secrets",
+            _role("billing", "fazerops-capture-secret-rotator", "secrets",
                   ["get", "update", "patch"]),
-            _binding("billing", "faberops-capture-deployer", "faberops-capture-secret-rotator",
+            _binding("billing", "fazerops-capture-deployer", "fazerops-capture-secret-rotator",
                      {"kind": "ServiceAccount", "name": "deployer", "namespace": "ci"}),
-            _role("auth", "faberops-capture-configmap-editor", "configmaps",
+            _role("auth", "fazerops-capture-configmap-editor", "configmaps",
                   ["get", "patch"]),
-            _binding("auth", "faberops-capture-priya", "faberops-capture-configmap-editor",
+            _binding("auth", "fazerops-capture-priya", "fazerops-capture-configmap-editor",
                      {"kind": "User", "name": PRIYA, "apiGroup": "rbac.authorization.k8s.io"}),
         ],
     }))
@@ -237,7 +237,7 @@ def perform_the_scenario(dinesh: Principal, priya: Principal,
     # 4. Control-plane noise, excluded by principal rather than by heuristics.
     collector.kubectl("patch", "deployment", "billing-api", "-n", "billing",
                       "--type", "merge", "-p", json.dumps(
-                          {"metadata": {"annotations": {"faberops.dev/capture": "w7b"}}}))
+                          {"metadata": {"annotations": {"fazerops.dev/capture": "w7b"}}}))
     time.sleep(0.4)
 
     # 5. The causal event: pool.max 100 -> 20, by hand, no PR, no pipeline.
@@ -333,7 +333,7 @@ def main() -> int:
     if not AUDIT_LOG.exists():
         raise SystemExit(f"no audit log at {AUDIT_LOG} — run scripts/setup_k3d.sh first")
 
-    with tempfile.TemporaryDirectory(prefix="faberops-capture-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="fazerops-capture-") as tmp:
         workdir = Path(tmp)
         server, ca_file, kubeconfig = cluster_endpoint(workdir)
 

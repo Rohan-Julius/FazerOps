@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from faberops.ingest.alerts import normalize_alert
-from faberops.ingest.classify import classify
-from faberops.models import AlertClass
+from fazerops.ingest.alerts import normalize_alert
+from fazerops.ingest.classify import classify
+from fazerops.models import AlertClass
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "alerts"
 CLASSES = FIXTURES / "classes"

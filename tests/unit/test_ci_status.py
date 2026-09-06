@@ -12,9 +12,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from faberops.collectors.github import GitHubCollector, ci_status_from, render_ci_status
-from faberops.models import CIStatus, TimeWindow
-from faberops.radius import ServiceManifest
+from fazerops.collectors.github import GitHubCollector, ci_status_from, render_ci_status
+from fazerops.models import CIStatus, TimeWindow
+from fazerops.radius import ServiceManifest
 
 ALERT_TIME = datetime(2026, 9, 6, 14, 41, tzinfo=timezone.utc)
 WINDOW = TimeWindow(start=ALERT_TIME - timedelta(hours=4), end=ALERT_TIME)
@@ -28,7 +28,7 @@ def radius():
 
 
 async def test_the_demo_window_renders_the_line_verbatim(radius, monkeypatch):
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
     result = await GitHubCollector().fetch(radius, WINDOW)
 
     assert result.ok
@@ -39,7 +39,7 @@ async def test_the_demo_window_renders_the_line_verbatim(radius, monkeypatch):
 async def test_a_non_empty_window_renders_a_merge_count_instead(radius, monkeypatch):
     """The assertion that proves the renderer reads the data. If this said the same thing
     as the test above, the line would be a claim rather than a finding."""
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
 
     collector = GitHubCollector()
     collector.fixture_dir = "github_nonempty"
@@ -59,7 +59,7 @@ def test_singular_and_plural_both_read_correctly():
 async def test_the_repos_actually_checked_are_recorded(radius, monkeypatch):
     """The claim is only as strong as its scope. A brief that says nothing shipped without
     naming where it looked is not evidence."""
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
     result = await GitHubCollector().fetch(radius, WINDOW)
 
     status = ci_status_from(result, radius)
@@ -70,7 +70,7 @@ async def test_the_repos_actually_checked_are_recorded(radius, monkeypatch):
 async def test_merges_outside_the_window_do_not_count(radius, monkeypatch):
     """Otherwise the strongest claim in the product is scoped to whatever the fixture
     happens to hold rather than to the incident window."""
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
 
     collector = GitHubCollector()
     collector.fixture_dir = "github_nonempty"
@@ -82,7 +82,7 @@ async def test_merges_outside_the_window_do_not_count(radius, monkeypatch):
 
 async def test_merges_are_reported_in_band(radius, monkeypatch):
     """A merge *is* the pipeline. Handoff §3: reported to the user, never scored."""
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
 
     collector = GitHubCollector()
     collector.fixture_dir = "github_nonempty"

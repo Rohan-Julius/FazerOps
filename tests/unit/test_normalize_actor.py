@@ -6,14 +6,14 @@ the brief then names the wrong person as the author of the change.
 
 import pytest
 
-from faberops.ledger.normalize import (
+from fazerops.ledger.normalize import (
     IdentityMap,
     blast_radius_keys,
     default_identity_map,
     normalize_action,
     normalize_actor,
 )
-from faberops.models import NormalizedAction, ResourceRef
+from fazerops.models import NormalizedAction, ResourceRef
 
 IAM_ARN = "arn:aws:iam::111122223333:user/dinesh"
 ASSUMED_ROLE = "arn:aws:sts::111122223333:assumed-role/platform-engineer/dinesh"

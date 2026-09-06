@@ -11,8 +11,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      FABEROPS_MODE: fixture
-      FABEROPS_LLM: stub
+      FAZEROPS_MODE: fixture
+      FAZEROPS_LLM: stub
     steps:
       - uses: actions/checkout@v4
 

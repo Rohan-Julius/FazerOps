@@ -16,8 +16,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from faberops.collectors.k8s_audit import AUDIT_LOG_ENV, K8sAuditCollector
-from faberops.radius import ServiceManifest
+from fazerops.collectors.k8s_audit import AUDIT_LOG_ENV, K8sAuditCollector
+from fazerops.radius import ServiceManifest
 
 ALERT_TIME = datetime(2026, 9, 6, 14, 41, tzinfo=timezone.utc)
 WINDOW_START = ALERT_TIME - timedelta(hours=4)
@@ -45,7 +45,7 @@ def entry(when: datetime, *, name: str = "billing-api-config", verb: str = "upda
 def audit_log(tmp_path, monkeypatch):
     """Point the live path at a log this test controls, in live mode."""
     path = tmp_path / "audit.log"
-    monkeypatch.setenv("FABEROPS_MODE", "live")
+    monkeypatch.setenv("FAZEROPS_MODE", "live")
     monkeypatch.setenv(AUDIT_LOG_ENV, str(path))
 
     def write(entries: list[dict], trailing: str = "") -> None:
@@ -58,7 +58,7 @@ def audit_log(tmp_path, monkeypatch):
 
 @pytest.fixture
 def window():
-    from faberops.models import TimeWindow
+    from fazerops.models import TimeWindow
 
     return TimeWindow(start=WINDOW_START, end=ALERT_TIME)
 
@@ -140,7 +140,7 @@ async def test_a_missing_log_degrades_the_brief_rather_than_reporting_no_changes
 ):
     """The one wrong answer this product can give is "nothing changed" when it simply
     could not look. A degraded brief names the source; an empty one lies."""
-    monkeypatch.setenv("FABEROPS_MODE", "live")
+    monkeypatch.setenv("FAZEROPS_MODE", "live")
     monkeypatch.setenv(AUDIT_LOG_ENV, str(tmp_path / "nope.log"))
 
     result = await K8sAuditCollector().fetch(radius, window)

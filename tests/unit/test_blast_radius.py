@@ -4,7 +4,7 @@ failure is a silent empty list rather than an exception.
 
 import pytest
 
-from faberops.radius import ServiceManifest, default_manifest
+from fazerops.radius import ServiceManifest, default_manifest
 
 CONFIGMAP_KEY = "k8s:billing/configmap/billing-api-config"
 RDS_KEY = "aws:arn:aws:rds:us-east-1:111122223333:db:billing-primary"
@@ -67,7 +67,7 @@ def test_workload_kind_prefix_is_honoured(manifest):
 def test_a_bare_workload_name_is_read_as_a_deployment():
     """Tolerated because it is the common case, and rejecting it would turn a manifest
     typo into a stack trace at import time."""
-    from faberops.keys import k8s_workload
+    from fazerops.keys import k8s_workload
 
     assert k8s_workload("billing", "billing-api").kind == "Deployment"
     assert k8s_workload("auth", "statefulset/session-store").kind == "StatefulSet"

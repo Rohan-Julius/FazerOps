@@ -1,4 +1,4 @@
-# FaberOps
+# FazerOps
 
 **The change ledger for everything that didn't go through CI — and an agent that reads it when the page fires.**
 
@@ -14,11 +14,11 @@ Answering it means hand-querying CloudTrail, the Kubernetes audit log, Helm rele
 
 Incident-management tools coordinate the incident. Where they track change at all, they source it from GitHub and CI/CD — which makes them structurally blind to `kubectl edit`, console IAM edits, Helm rollouts outside the pipeline, parameter-group changes and Terraform applied from a laptop. Those are precisely the changes nobody canaries and nobody rolls back automatically.
 
-FaberOps normalizes in-band and out-of-band mutations into a single **change ledger**, then runs an agent over it at alert time to answer *"what changed in this blast radius, and which change most plausibly caused this?"* — with evidence, diffs, and a reversible action attached.
+FazerOps normalizes in-band and out-of-band mutations into a single **change ledger**, then runs an agent over it at alert time to answer *"what changed in this blast radius, and which change most plausibly caused this?"* — with evidence, diffs, and a reversible action attached.
 
 ## Status
 
-**Under active development.** See [`PLAN_FABEROPS.md`](PLAN_FABEROPS.md) for scope, schedule and cut priorities.
+**Under active development.** See [`PLAN_FAZEROPS.md`](PLAN_FAZEROPS.md) for scope, schedule and cut priorities.
 
 ## Quickstart
 

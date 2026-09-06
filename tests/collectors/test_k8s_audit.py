@@ -9,9 +9,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from faberops.collectors.k8s_audit import K8sAuditCollector
-from faberops.models import NormalizedAction, TimeWindow
-from faberops.radius import ServiceManifest
+from fazerops.collectors.k8s_audit import K8sAuditCollector
+from fazerops.models import NormalizedAction, TimeWindow
+from fazerops.radius import ServiceManifest
 
 ALERT_TIME = datetime(2026, 9, 6, 14, 41, tzinfo=timezone.utc)
 WINDOW = TimeWindow(start=ALERT_TIME - timedelta(hours=4), end=ALERT_TIME)
@@ -24,7 +24,7 @@ def radius():
 
 @pytest.fixture
 async def events(radius, monkeypatch):
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
     result = await K8sAuditCollector().fetch(radius, WINDOW)
     assert result.ok, result.error
     return result.events

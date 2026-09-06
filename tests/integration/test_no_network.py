@@ -20,11 +20,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from faberops.collectors.base import BaseCollector
-from faberops.config import ConfigError, is_offline, llm_mode, mode
-from faberops.ledger.normalize import blast_radius_keys, normalize_action, normalize_actor
-from faberops.models import BlastRadius, ChangeEvent, ResourceRef, TimeWindow
-from faberops.radius import ServiceManifest
+from fazerops.collectors.base import BaseCollector
+from fazerops.config import ConfigError, is_offline, llm_mode, mode
+from fazerops.ledger.normalize import blast_radius_keys, normalize_action, normalize_actor
+from fazerops.models import BlastRadius, ChangeEvent, ResourceRef, TimeWindow
+from fazerops.radius import ServiceManifest
 
 ALERT_TIME = datetime(2026, 9, 6, 14, 41, tzinfo=timezone.utc)
 
@@ -61,8 +61,8 @@ def no_network(tmp_path, monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
-    monkeypatch.setenv("FABEROPS_LLM", "stub")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_LLM", "stub")
     return tmp_path
 
 
@@ -113,7 +113,7 @@ async def test_the_fixture_pipeline_runs_with_no_socket_no_credentials_no_home(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("faberops.collectors.base.FIXTURE_ROOT", no_network)
+    monkeypatch.setattr("fazerops.collectors.base.FIXTURE_ROOT", no_network)
 
     radius = ServiceManifest.load().resolve("billing-api")
     window = TimeWindow(start=ALERT_TIME - timedelta(hours=4), end=ALERT_TIME)
@@ -162,8 +162,8 @@ def test_the_manifest_and_identity_map_load_without_network_or_home(no_network):
 
 def test_offline_is_the_default_when_nothing_is_configured(monkeypatch):
     """A judge who exports nothing gets the zero-credential path."""
-    monkeypatch.delenv("FABEROPS_MODE", raising=False)
-    monkeypatch.delenv("FABEROPS_LLM", raising=False)
+    monkeypatch.delenv("FAZEROPS_MODE", raising=False)
+    monkeypatch.delenv("FAZEROPS_LLM", raising=False)
 
     assert mode().value == "fixture"
     assert llm_mode().value == "stub"
@@ -181,20 +181,20 @@ def test_offline_is_the_default_when_nothing_is_configured(monkeypatch):
     ],
 )
 def test_offline_requires_both_switches(monkeypatch, mode_value, llm_value, expected):
-    monkeypatch.setenv("FABEROPS_MODE", mode_value)
-    monkeypatch.setenv("FABEROPS_LLM", llm_value)
+    monkeypatch.setenv("FAZEROPS_MODE", mode_value)
+    monkeypatch.setenv("FAZEROPS_LLM", llm_value)
     assert is_offline() is expected
 
 
 def test_an_invalid_switch_fails_loudly_rather_than_defaulting(monkeypatch):
     """Silently falling back to a default means running the wrong path on demo day."""
-    monkeypatch.setenv("FABEROPS_LLM", "claude-opus")
+    monkeypatch.setenv("FAZEROPS_LLM", "claude-opus")
     with pytest.raises(ConfigError, match="claude-opus"):
         llm_mode()
 
 
 def test_require_offline_capable_blocks_client_construction(no_network):
-    from faberops.config import require_offline_capable
+    from fazerops.config import require_offline_capable
 
     with pytest.raises(RuntimeError, match="must not touch the network"):
         require_offline_capable("CloudTrailCollector")

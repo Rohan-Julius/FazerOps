@@ -78,7 +78,7 @@ def test_env_example_holds_no_values():
     assert example.exists(), ".env.example must exist so nobody improvises a .env"
 
     # Two switches carry safe non-secret defaults; everything else must be empty.
-    allowed_values = {"FABEROPS_MODE": "fixture", "FABEROPS_LLM": "stub"}
+    allowed_values = {"FAZEROPS_MODE": "fixture", "FAZEROPS_LLM": "stub"}
 
     for line in example.read_text(encoding="utf-8").splitlines():
         line = line.strip()

@@ -7,7 +7,7 @@ a re-plan cannot force investigation rework, which requires the dependency to ru
 investigation emits a `Brief`; automation consumes one and emits a `Proposal`. Nothing
 flows back.
 
-Written now, before `faberops.actions` and `faberops.slack.handlers` exist, and it stays
+Written now, before `fazerops.actions` and `fazerops.slack.handlers` exist, and it stays
 green as they are added. Writing it afterwards would mean writing it against whatever
 coupling had already crept in.
 """
@@ -25,7 +25,7 @@ import pytest
 FIXTURE_ALERTS = Path(__file__).resolve().parents[2] / "fixtures" / "alerts"
 
 # The automation layer. The investigation layer must not import any of these, at any depth.
-AUTOMATION_MODULES = ("faberops.actions", "faberops.slack", "faberops.security.credentials")
+AUTOMATION_MODULES = ("fazerops.actions", "fazerops.slack", "fazerops.security.credentials")
 
 
 @pytest.fixture
@@ -57,11 +57,11 @@ async def test_a_complete_brief_renders_with_the_automation_layer_deleted(
 ):
     """The seam, asserted end to end: ingest, collect, rank, render — all of it standing
     on its own."""
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
 
-    from faberops.ingest.alerts import normalize_alert
-    from faberops.pipeline import investigate
-    from faberops.render.text import render_brief
+    from fazerops.ingest.alerts import normalize_alert
+    from fazerops.pipeline import investigate
+    from fazerops.render.text import render_brief
 
     alert = normalize_alert(
         json.loads((FIXTURE_ALERTS / "alertmanager.json").read_text(encoding="utf-8"))
@@ -80,21 +80,21 @@ async def test_a_complete_brief_renders_with_the_automation_layer_deleted(
 def test_the_guard_actually_blocks_the_automation_layer(automation_layer_deleted):
     """A guard that does not guard passes every test for the wrong reason."""
     with pytest.raises(ImportError):
-        importlib.import_module("faberops.actions.catalog")
+        importlib.import_module("fazerops.actions.catalog")
 
 
 @pytest.mark.parametrize(
     "module_name",
     [
-        "faberops.models",
-        "faberops.pipeline",
-        "faberops.radius",
-        "faberops.render.text",
-        "faberops.ingest.alerts",
-        "faberops.main",
-        "faberops.correlation.scoring",
-        "faberops.collectors.k8s_audit",
-        "faberops.collectors.github",
+        "fazerops.models",
+        "fazerops.pipeline",
+        "fazerops.radius",
+        "fazerops.render.text",
+        "fazerops.ingest.alerts",
+        "fazerops.main",
+        "fazerops.correlation.scoring",
+        "fazerops.collectors.k8s_audit",
+        "fazerops.collectors.github",
     ],
 )
 def test_every_investigation_module_imports_cleanly_without_automation(
@@ -110,7 +110,7 @@ def test_every_investigation_module_imports_cleanly_without_automation(
     nothing. That failure appears in an unrelated test file, which is a long afternoon.
     """
     for name in list(sys.modules):
-        if name.startswith("faberops"):
+        if name.startswith("fazerops"):
             monkeypatch.delitem(sys.modules, name)
     importlib.import_module(module_name)
 
@@ -121,7 +121,7 @@ def test_the_inverse_hint_stays_opaque_to_the_investigation_layer(automation_lay
     shape change without touching anything upstream."""
     import inspect
 
-    from faberops import models
+    from fazerops import models
 
     source = inspect.getsource(models.Candidate)
     assert "inverse_hint" in source
@@ -136,10 +136,10 @@ async def test_the_brief_is_json_serializable_without_the_automation_layer(
 ):
     """AgentCore requires a JSON-serializable response (plan §1.1), and the markdown
     record consumes the same object. Neither may need the automation layer present."""
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
 
-    from faberops.ingest.alerts import normalize_alert
-    from faberops.pipeline import investigate
+    from fazerops.ingest.alerts import normalize_alert
+    from fazerops.pipeline import investigate
 
     alert = normalize_alert(
         json.loads((FIXTURE_ALERTS / "alertmanager.json").read_text(encoding="utf-8"))

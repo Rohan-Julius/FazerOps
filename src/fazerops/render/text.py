@@ -1,7 +1,7 @@
 """Plain-text brief renderer — the stdout surface, and the one the layer-seam test uses.
 
 Slack Block Kit (W25) is the demo's visible surface, but this renderer is what proves the
-seam: a `Brief` renders here with `faberops.actions` and `faberops.slack` deleted from the
+seam: a `Brief` renders here with `fazerops.actions` and `fazerops.slack` deleted from the
 process (plan §3.5). It also carries the clean-machine quickstart, where a judge with no
 Slack workspace still sees the full finding.
 """
@@ -17,7 +17,7 @@ RULE = "─" * 68
 def render_brief(brief: Brief) -> str:
     lines: list[str] = [
         RULE,
-        f"FaberOps change brief · {brief.incident_id}",
+        f"FazerOps change brief · {brief.incident_id}",
         RULE,
         f"Alert     {brief.alert.summary}",
         f"Service   {brief.alert.service}",

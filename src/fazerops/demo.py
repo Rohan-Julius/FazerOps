@@ -22,7 +22,7 @@ FIXTURE_ALERTS = Path(__file__).resolve().parents[2] / "fixtures" / "alerts"
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="faberops-demo", description=__doc__)
+    parser = argparse.ArgumentParser(prog="fazerops-demo", description=__doc__)
     parser.add_argument(
         "--alert",
         default=str(FIXTURE_ALERTS / "alertmanager.json"),

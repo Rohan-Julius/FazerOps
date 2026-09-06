@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from faberops.ledger.normalize import NaiveTimestampError, parse_timestamp
+from fazerops.ledger.normalize import NaiveTimestampError, parse_timestamp
 
 # One instant: 2026-09-06 14:03:11 UTC.
 EXPECTED = datetime(2026, 9, 6, 14, 3, 11, tzinfo=timezone.utc)

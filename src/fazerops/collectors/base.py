@@ -120,7 +120,7 @@ class BaseCollector(abc.ABC):
         self, radius: BlastRadius, window: TimeWindow
     ) -> list[dict[str, Any]]:
         raise NotImplementedError(
-            f"{type(self).__name__} has no live mode; run with FABEROPS_MODE=fixture"
+            f"{type(self).__name__} has no live mode; run with FAZEROPS_MODE=fixture"
         )
 
     def _prepare(self, raw_items: list[dict[str, Any]]) -> list[dict[str, Any]]:

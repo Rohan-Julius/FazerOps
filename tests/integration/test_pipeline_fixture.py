@@ -16,10 +16,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from faberops.ingest.alerts import UnrecognisedPayload, normalize_alert
-from faberops.main import app
-from faberops.pipeline import investigate
-from faberops.render.text import render_brief
+from fazerops.ingest.alerts import UnrecognisedPayload, normalize_alert
+from fazerops.main import app
+from fazerops.pipeline import investigate
+from fazerops.render.text import render_brief
 
 FIXTURE_ALERTS = Path(__file__).resolve().parents[2] / "fixtures" / "alerts"
 SHAPES = ["alertmanager", "cloudwatch", "pagerduty"]
@@ -31,8 +31,8 @@ def _payload(shape: str) -> dict:
 
 @pytest.fixture(autouse=True)
 def fixture_mode(monkeypatch):
-    monkeypatch.setenv("FABEROPS_MODE", "fixture")
-    monkeypatch.setenv("FABEROPS_LLM", "stub")
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_LLM", "stub")
 
 
 @pytest.fixture

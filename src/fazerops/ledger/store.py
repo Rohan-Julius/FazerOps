@@ -31,7 +31,7 @@ from pathlib import Path
 
 from ..models import BlastRadius, ChangeEvent, TimeWindow
 
-DEFAULT_LEDGER_PATH = Path(".faberops") / "ledger.jsonl"
+DEFAULT_LEDGER_PATH = Path(".fazerops") / "ledger.jsonl"
 
 
 class LedgerStore:

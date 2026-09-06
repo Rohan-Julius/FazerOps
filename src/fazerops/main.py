@@ -20,7 +20,7 @@ from .ingest.alerts import UnrecognisedPayload, normalize_alert
 from .pipeline import investigate
 from .render.text import render_brief
 
-app = FastAPI(title="FaberOps", version="0.1.0")
+app = FastAPI(title="FazerOps", version="0.1.0")
 
 
 @app.get("/health")

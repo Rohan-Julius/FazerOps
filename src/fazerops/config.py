@@ -1,7 +1,7 @@
 """The two orthogonal switches the whole build runs on (plan §5).
 
-    FABEROPS_MODE = fixture | live                       where collector data comes from
-    FABEROPS_LLM  = stub | cassette | record | nova | demo | sonnet
+    FAZEROPS_MODE = fixture | live                       where collector data comes from
+    FAZEROPS_LLM  = stub | cassette | record | nova | demo | sonnet
 
 `fixture` + `stub` is the zero-credential, zero-network path — the CI default, and the
 path a judge hits on a clean machine with no AWS config. It is guarded by
@@ -63,11 +63,11 @@ def _read(name: str, enum: type[Enum], default: Enum) -> Enum:
 
 
 def mode() -> Mode:
-    return _read("FABEROPS_MODE", Mode, Mode.FIXTURE)
+    return _read("FAZEROPS_MODE", Mode, Mode.FIXTURE)
 
 
 def llm_mode() -> LlmMode:
-    return _read("FABEROPS_LLM", LlmMode, LlmMode.STUB)
+    return _read("FAZEROPS_LLM", LlmMode, LlmMode.STUB)
 
 
 def is_offline() -> bool:
@@ -85,6 +85,6 @@ def require_offline_capable(component: str) -> None:
     if is_offline():
         raise RuntimeError(
             f"{component} attempted to construct a network client while "
-            f"FABEROPS_MODE={mode().value} and FABEROPS_LLM={llm_mode().value}. "
+            f"FAZEROPS_MODE={mode().value} and FAZEROPS_LLM={llm_mode().value}. "
             "The fixture path must not touch the network."
         )
