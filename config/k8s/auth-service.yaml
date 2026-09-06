@@ -1,0 +1,17 @@
+# The one-hop dependency from `service_manifest.yaml` (`billing-api.depends_on`). It exists
+# so the demo's competing candidate — `priya@` patching `auth-service-config` at 12:47 — is
+# an event a real API server can actually emit during W7b's capture. A blast radius with
+# nothing in its second position never proves the radius is doing anything.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: auth
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-service-config
+  namespace: auth
+data:
+  session.ttl: "3600"
+  issuer: "auth.faber-demo.internal"

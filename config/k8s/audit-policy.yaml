@@ -1,0 +1,41 @@
+# W7 — the audit policy the demo's evidence chain depends on (Handoff §5).
+#
+# `RequestResponse` for ConfigMaps and Secrets is the whole point: only that level puts
+# `requestObject` and `responseObject` in the entry, and without the stored object body
+# there is no real before/after for the ConfigMap edit — the diff becomes a claim instead
+# of a screenshot. Everything else is `Metadata`, which is the documented minimum.
+#
+# What is deliberately NOT filtered here: read verbs, and kube-system principals. Both are
+# excluded by `collectors/k8s_audit.py`, and W7b captures this log as the fixture — so if
+# the policy dropped them the fixture could never exercise those filters against payloads
+# a real API server produced. Noise costs a few MB on a cluster that lives for minutes.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+
+# The API server emits one entry per stage. `ResponseComplete` is the only one carrying
+# the stored object; `RequestReceived` would double every line for nothing.
+omitStages:
+  - RequestReceived
+
+rules:
+  # Health and discovery endpoints, polled continuously by the kubelet and the load
+  # balancer. Not resources, never changes, pure volume.
+  - level: None
+    nonResourceURLs:
+      - /healthz*
+      - /livez*
+      - /readyz*
+      - /version
+      - /metrics
+      - /openapi*
+      - /apis
+      - /api
+
+  # Handoff §5: the actual object bodies, for the two resource types whose contents are
+  # the evidence.
+  - level: RequestResponse
+    resources:
+      - group: ""
+        resources: ["configmaps", "secrets"]
+
+  - level: Metadata
