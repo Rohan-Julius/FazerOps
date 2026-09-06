@@ -1,0 +1,16 @@
+{
+  "event": {
+    "id": "01F2K3L4M5N6O7P8Q9R0S1T2U3",
+    "event_type": "incident.triggered",
+    "resource_type": "incident",
+    "occurred_at": "2026-09-06T14:41:00Z",
+    "data": {
+      "id": "PINC42Z",
+      "type": "incident",
+      "title": "billing-api p99 latency above threshold; error rate climbing",
+      "urgency": "high",
+      "status": "triggered",
+      "service": { "id": "PSVC001", "summary": "billing-api", "type": "service_reference" }
+    }
+  }
+}

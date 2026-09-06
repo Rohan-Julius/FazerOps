@@ -1,0 +1,21 @@
+{
+  "receiver": "faberops",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "BillingApiLatencyHigh",
+        "service": "billing-api",
+        "severity": "critical",
+        "namespace": "billing"
+      },
+      "annotations": {
+        "summary": "billing-api p99 latency above threshold; error rate climbing",
+        "runbook_url": "https://runbooks.faber-demo.io/billing-api-latency"
+      },
+      "startsAt": "2026-09-06T14:41:00Z",
+      "fingerprint": "7c1f9a2e4b6d8033"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "number": 412,
+    "title": "Bump billing-api connection pool ceiling",
+    "merged_at": "2026-09-06T12:05:44Z",
+    "merge_commit_sha": "9f3c1ad4e77b2c05a1e6f8d3b2409c7715ee0a13",
+    "user": { "login": "priya-s" },
+    "base": { "repo": { "full_name": "faber-demo/billing-api" } }
+  },
+  {
+    "number": 413,
+    "title": "Add retry budget to auth client",
+    "merged_at": "2026-09-06T13:22:10Z",
+    "merge_commit_sha": "2b70de915c48af03e6172bb9d0c4a83f5e1d6602",
+    "user": { "login": "dinesh-r" },
+    "base": { "repo": { "full_name": "faber-demo/billing-api" } }
+  }
+]

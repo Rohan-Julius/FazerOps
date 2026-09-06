@@ -1,0 +1,286 @@
+[
+  {
+    "kind": "Event",
+    "apiVersion": "audit.k8s.io/v1",
+    "level": "RequestResponse",
+    "auditID": "3f2a1c88-0b41-4e6d-9f2a-1c880b414e6d",
+    "stage": "ResponseComplete",
+    "requestURI": "/api/v1/namespaces/billing/configmaps/billing-api-config",
+    "verb": "update",
+    "user": {
+      "username": "dinesh@faber-demo.io",
+      "groups": [
+        "system:authenticated"
+      ]
+    },
+    "sourceIPs": [
+      "10.42.0.19"
+    ],
+    "userAgent": "kubectl/v1.31.4 (darwin/arm64) kubernetes/a1b2c3d",
+    "objectRef": {
+      "resource": "configmaps",
+      "namespace": "billing",
+      "name": "billing-api-config",
+      "apiVersion": "v1"
+    },
+    "responseStatus": {
+      "metadata": {},
+      "code": 200
+    },
+    "requestObject": {
+      "kind": "ConfigMap",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "billing-api-config",
+        "namespace": "billing"
+      },
+      "data": {
+        "pool.max": "100",
+        "pool.min": "5",
+        "timeout": "30s"
+      }
+    },
+    "responseObject": {
+      "kind": "ConfigMap",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "resourceVersion": "48120"
+      },
+      "data": {
+        "pool.max": "100",
+        "pool.min": "5",
+        "timeout": "30s"
+      }
+    },
+    "requestReceivedTimestamp": "2026-09-06T09:12:04.881204Z",
+    "responseCompleteTimestamp": "2026-09-06T09:12:04.902117Z",
+    "annotations": {
+      "authorization.k8s.io/decision": "allow"
+    }
+  },
+  {
+    "kind": "Event",
+    "apiVersion": "audit.k8s.io/v1",
+    "level": "RequestResponse",
+    "auditID": "9c14e7b2-55af-4a19-8e30-2d61f0aa77bc",
+    "stage": "ResponseComplete",
+    "requestURI": "/api/v1/namespaces/billing/secrets/billing-api-db",
+    "verb": "update",
+    "user": {
+      "username": "system:serviceaccount:ci:deployer",
+      "groups": [
+        "system:serviceaccounts",
+        "system:authenticated"
+      ]
+    },
+    "sourceIPs": [
+      "10.42.0.7"
+    ],
+    "userAgent": "helm/v3.16.2",
+    "objectRef": {
+      "resource": "secrets",
+      "namespace": "billing",
+      "name": "billing-api-db",
+      "apiVersion": "v1"
+    },
+    "responseStatus": {
+      "metadata": {},
+      "code": 200
+    },
+    "responseObject": {
+      "kind": "Secret",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "billing-api-db",
+        "namespace": "billing"
+      },
+      "type": "Opaque",
+      "data": {
+        "password": "c3VwZXJzZWNyZXQtcm90YXRlZA=="
+      }
+    },
+    "requestReceivedTimestamp": "2026-09-06T11:30:02.140933Z",
+    "responseCompleteTimestamp": "2026-09-06T11:30:02.171004Z",
+    "annotations": {
+      "authorization.k8s.io/decision": "allow"
+    }
+  },
+  {
+    "kind": "Event",
+    "apiVersion": "audit.k8s.io/v1",
+    "level": "RequestResponse",
+    "auditID": "b7d0e441-2c6f-4b58-a0d3-77e1c9048f2a",
+    "stage": "ResponseComplete",
+    "requestURI": "/api/v1/namespaces/auth/configmaps/auth-service-config",
+    "verb": "patch",
+    "user": {
+      "username": "priya@faber-demo.io",
+      "groups": [
+        "system:authenticated"
+      ]
+    },
+    "sourceIPs": [
+      "10.42.0.31"
+    ],
+    "userAgent": "kubectl/v1.31.4 (darwin/arm64) kubernetes/a1b2c3d",
+    "objectRef": {
+      "resource": "configmaps",
+      "namespace": "auth",
+      "name": "auth-service-config",
+      "apiVersion": "v1"
+    },
+    "responseStatus": {
+      "metadata": {},
+      "code": 200
+    },
+    "responseObject": {
+      "kind": "ConfigMap",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "auth-service-config",
+        "namespace": "auth"
+      },
+      "data": {
+        "token.ttl": "3600s",
+        "issuer": "https://auth.faber-demo.io"
+      }
+    },
+    "requestReceivedTimestamp": "2026-09-06T12:47:33.552018Z",
+    "responseCompleteTimestamp": "2026-09-06T12:47:33.588740Z",
+    "annotations": {
+      "authorization.k8s.io/decision": "allow"
+    }
+  },
+  {
+    "kind": "Event",
+    "apiVersion": "audit.k8s.io/v1",
+    "level": "Metadata",
+    "auditID": "e50c33a7-9182-4d47-bb61-0a4c25d9e118",
+    "stage": "ResponseComplete",
+    "requestURI": "/apis/apps/v1/namespaces/billing/deployments/billing-api",
+    "verb": "update",
+    "user": {
+      "username": "system:serviceaccount:kube-system:generic-garbage-collector",
+      "groups": [
+        "system:serviceaccounts:kube-system",
+        "system:authenticated"
+      ]
+    },
+    "sourceIPs": [
+      "10.42.0.1"
+    ],
+    "userAgent": "kube-controller-manager/v1.31.4",
+    "objectRef": {
+      "resource": "deployments",
+      "namespace": "billing",
+      "name": "billing-api",
+      "apiVersion": "apps/v1"
+    },
+    "responseStatus": {
+      "metadata": {},
+      "code": 200
+    },
+    "requestReceivedTimestamp": "2026-09-06T13:55:10.004221Z",
+    "responseCompleteTimestamp": "2026-09-06T13:55:10.019880Z",
+    "annotations": {
+      "authorization.k8s.io/decision": "allow"
+    }
+  },
+  {
+    "kind": "Event",
+    "apiVersion": "audit.k8s.io/v1",
+    "level": "RequestResponse",
+    "auditID": "1a9f4d20-6ec3-42bb-9d75-8f01a4c6b3ee",
+    "stage": "ResponseComplete",
+    "requestURI": "/api/v1/namespaces/billing/configmaps/billing-api-config",
+    "verb": "update",
+    "user": {
+      "username": "dinesh@faber-demo.io",
+      "groups": [
+        "system:authenticated"
+      ]
+    },
+    "sourceIPs": [
+      "10.42.0.19"
+    ],
+    "userAgent": "kubectl/v1.31.4 (darwin/arm64) kubernetes/a1b2c3d",
+    "objectRef": {
+      "resource": "configmaps",
+      "namespace": "billing",
+      "name": "billing-api-config",
+      "apiVersion": "v1"
+    },
+    "responseStatus": {
+      "metadata": {},
+      "code": 200
+    },
+    "requestObject": {
+      "kind": "ConfigMap",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "billing-api-config",
+        "namespace": "billing"
+      },
+      "data": {
+        "pool.max": "20",
+        "pool.min": "5",
+        "timeout": "30s"
+      }
+    },
+    "responseObject": {
+      "kind": "ConfigMap",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "resourceVersion": "51733"
+      },
+      "data": {
+        "pool.max": "20",
+        "pool.min": "5",
+        "timeout": "30s"
+      }
+    },
+    "requestReceivedTimestamp": "2026-09-06T14:03:11.417662Z",
+    "responseCompleteTimestamp": "2026-09-06T14:03:11.449201Z",
+    "annotations": {
+      "authorization.k8s.io/decision": "allow"
+    }
+  },
+  {
+    "kind": "Event",
+    "apiVersion": "audit.k8s.io/v1",
+    "level": "Metadata",
+    "auditID": "cc0b8f19-77d4-4a02-91be-6e3ab5f7d100",
+    "stage": "ResponseComplete",
+    "requestURI": "/api/v1/namespaces/billing/configmaps/billing-api-config",
+    "verb": "get",
+    "user": {
+      "username": "dinesh@faber-demo.io",
+      "groups": [
+        "system:authenticated"
+      ]
+    },
+    "sourceIPs": [
+      "10.42.0.19"
+    ],
+    "userAgent": "kubectl/v1.31.4 (darwin/arm64) kubernetes/a1b2c3d",
+    "objectRef": {
+      "resource": "configmaps",
+      "namespace": "billing",
+      "name": "billing-api-config",
+      "apiVersion": "v1"
+    },
+    "responseStatus": {
+      "metadata": {},
+      "code": 200
+    },
+    "requestReceivedTimestamp": "2026-09-06T14:20:47.310556Z",
+    "responseCompleteTimestamp": "2026-09-06T14:20:47.318902Z",
+    "annotations": {
+      "authorization.k8s.io/decision": "allow"
+    }
+  }
+]

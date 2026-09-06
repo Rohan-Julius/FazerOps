@@ -1,0 +1,18 @@
+{
+  "AlarmName": "billing-api-p99-latency",
+  "AlarmDescription": "billing-api p99 latency above threshold; error rate climbing",
+  "AWSAccountId": "111122223333",
+  "NewStateValue": "ALARM",
+  "NewStateReason": "Threshold Crossed: 1 datapoint [1840.0] was greater than 800.0",
+  "StateChangeTime": "2026-09-06T14:41:00.000+0000",
+  "Region": "US East (N. Virginia)",
+  "Trigger": {
+    "MetricName": "TargetResponseTime",
+    "Namespace": "AWS/ApplicationELB",
+    "Statistic": "p99",
+    "Dimensions": [{ "name": "ServiceName", "value": "billing-api" }],
+    "Period": 60,
+    "EvaluationPeriods": 1,
+    "Threshold": 800.0
+  }
+}
