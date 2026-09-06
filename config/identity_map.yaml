@@ -1,0 +1,45 @@
+# The same human is an IAM ARN in CloudTrail, a username in the K8s audit log, and a
+# handle in GitHub. Handoff §3 calls this the hard part and the differentiator.
+#
+# Partial coverage is fine and expected. An actor with no entry here passes through with
+# resolved=False and its native identifier intact — never guessed, never dropped. A
+# wrongly-merged identity makes three humans look like one, which is worse than an
+# unresolved one, because the brief then attributes a change to the wrong person by name.
+
+identities:
+  dinesh:
+    kind: human
+    display_name: Dinesh R
+    cloudtrail:
+      - arn:aws:iam::111122223333:user/dinesh
+      - arn:aws:sts::111122223333:assumed-role/platform-engineer/dinesh
+    k8s_audit:
+      - dinesh@faber-demo.io
+    github:
+      - dinesh-r
+
+  priya:
+    kind: human
+    display_name: Priya S
+    cloudtrail:
+      - arn:aws:iam::111122223333:user/priya
+    k8s_audit:
+      - priya@faber-demo.io
+    github:
+      - priya-s
+
+  ci-deployer:
+    kind: service_account
+    display_name: CI deploy pipeline
+    cloudtrail:
+      - arn:aws:sts::111122223333:assumed-role/github-actions-deploy/billing-api
+    k8s_audit:
+      - system:serviceaccount:ci:deployer
+    github:
+      - github-actions[bot]
+
+# Principals whose changes arrived through the pipeline. `in_band` is reported to the user
+# but is NOT a correlation feature (Handoff §3) — boosting a change because it is
+# out-of-band is circular. This list decides what gets *reported* as in-band, nothing more.
+in_band_principals:
+  - ci-deployer

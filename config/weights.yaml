@@ -1,0 +1,31 @@
+# Correlation feature weights. W15's golden ranking test is what tunes these — do not
+# hand-adjust them to make one brief look better without re-running it.
+
+weights:
+  radius_overlap: 0.40
+  temporal_proximity: 0.35
+  type_prior: 0.25
+
+  # Zero weight, but the feature IS built (W14b, restored 6 Sep — PLAN §3.3). Handoff §6
+  # lists recurrence as one of four correlation features, so omitting it was a redesign of
+  # the spec rather than a scheduling choice.
+  #
+  # The feature computes; this weight declines to use it. Both facts are deliberately
+  # visible here. Recurrence is provably 0.0 against an empty ledger, which is exactly the
+  # demo's cold-start state, so a non-zero weight could only add noise to a term that
+  # cannot carry signal yet. Handoff Q4 asks whether the other three rank the demo
+  # correctly unaided; W15's golden test is what answers it.
+  recurrence: 0.0 # computed by W14b; weight 0.0 — no ledger history in the demo
+
+# Temporal decay half-life, in minutes. Handoff §6: "tune half-life around 30-45 min."
+#
+# 40 is chosen as a round value inside that range rather than at either edge. Deliberately
+# NOT tuned to the demo: 45 would score the demo's rank-1 margin higher, and ~38 would sit
+# exactly on the demo's own 38-minute gap, which is how a scoring function stops measuring
+# anything and starts describing one fixture. The margin is widened properly by the
+# type_prior table (W14), not by moving this number.
+temporal_half_life_minutes: 40
+
+# Scored when the manifest has no prior for this (action, resource_type) x alert_class
+# cell. A *declared* default, not a KeyError path and not a guess — see W14.
+type_prior_default: 0.5

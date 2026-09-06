@@ -1,0 +1,46 @@
+# Blast radius comes from this checked-in manifest, not from dependency auto-discovery.
+# Handoff §4: discovery is a multi-month problem. A stated limitation reads as engineering
+# judgement; a half-working discovery layer reads as a broken feature.
+#
+# Resolution is the named service plus ONE hop through depends_on. Two hops explodes the
+# candidate set — tests/unit/test_blast_radius.py asserts the second hop is excluded.
+
+services:
+  billing-api:
+    kubernetes:
+      namespace: billing
+      workloads: [deployment/billing-api]
+      configmaps: [billing-api-config]
+      secrets: [billing-api-db]
+    aws:
+      resources:
+        - arn:aws:rds:us-east-1:111122223333:db:billing-primary
+        - arn:aws:elasticache:us-east-1:111122223333:cluster:billing-cache
+      security_groups: [sg-0a1b2c3d]
+      iam_roles: [billing-api-task-role]
+    github:
+      repos: [faber-demo/billing-api]
+    depends_on: [auth-service, billing-db]
+
+  auth-service:
+    kubernetes:
+      namespace: auth
+      workloads: [deployment/auth-service]
+      configmaps: [auth-service-config]
+    github:
+      repos: [faber-demo/auth-service]
+    # session-store is TWO hops from billing-api and must not appear in its radius.
+    depends_on: [session-store]
+
+  billing-db:
+    aws:
+      resources:
+        - arn:aws:rds:us-east-1:111122223333:db:billing-replica
+    depends_on: []
+
+  session-store:
+    kubernetes:
+      namespace: auth
+      workloads: [statefulset/session-store]
+      configmaps: [session-store-config]
+    depends_on: []
