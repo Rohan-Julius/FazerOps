@@ -18,7 +18,7 @@ FazerOps normalizes in-band and out-of-band mutations into a single **change led
 
 ## Status
 
-**Under active development.** See [`PLAN_FAZEROPS.md`](PLAN_FAZEROPS.md) for scope, schedule and cut priorities.
+**Under active development.** Built for the AWS Agents for Humans hackathon.
 
 ## Quickstart
 
@@ -41,11 +41,40 @@ Secrets, which is what makes the demo's before/after diff a real object body rat
 an assertion. The fixtures under `fixtures/k8s_audit/` are recordings from this cluster,
 not hand-authored payloads — `scripts/capture_audit_fixture.py` regenerates them.
 
-**Disclosed limitation.** The Kubernetes audit log is not exposed through the Kubernetes
-API: the API server writes it to disk on the control-plane node, or ships it to a webhook.
-Live mode reads that file, which `setup_k3d.sh` bind-mounts onto the host. A production
-cluster ships the same JSON to a log sink and the collector would read it from there —
-a swap of one method, not a redesign. It is named here rather than half-built.
+## Stated limitations
+
+Named here rather than half-built. Each is a deliberate boundary, and none of them is
+hidden behind a partially working feature.
+
+- **Blast radius comes from a checked-in manifest**, `config/service_manifest.yaml` — not
+  from dependency auto-discovery. Discovery is a multi-month problem, and a half-working
+  discovery layer reads as a broken feature. Resolution is the named service plus one hop
+  through `depends_on`; two hops explodes the candidate set.
+- **The priors table is hand-authored.** `config/priors.yaml` is operational judgement
+  written down where it can be argued with, not something learned from incident data —
+  there is no incident corpus behind this product. The file says so, and the levels are
+  stated as `high`/`medium`/`low` so nobody mistakes a decimal for a measurement.
+- **CloudTrail is read through `lookup_events`, not an S3 trail.** That API does not return
+  the prior value of what changed, so a CloudTrail-sourced change shows the requested value
+  labelled *"new value; prior value not captured"* rather than a reconstructed before/after.
+  Kubernetes-sourced changes do carry a real diff, because the audit log records both
+  bodies.
+- **The default demo runs on fixtures.** Every fixture under `fixtures/` is a recording
+  from the real source — a live Kubernetes API server, a real Helm release — with only the
+  timestamps shifted onto the demo's narrative window; each directory's README states
+  exactly what was edited. Live mode runs the same normalizers against the same code path.
+- **The Kubernetes audit log is not exposed through the Kubernetes API.** The API server
+  writes it to disk on the control-plane node, or ships it to a webhook. Live mode reads
+  that file, which `setup_k3d.sh` bind-mounts onto the host. A production cluster ships the
+  same JSON to a log sink and the collector would read it from there — a swap of one
+  method, not a redesign.
+- **There is no post-execution verification.** Nothing re-reads state to confirm that an
+  approved remediation took effect; the human observes the recovery. This is a gap in the
+  specification rather than an oversight, and it is disclosed rather than papered over.
+- **The premise was not validated with pilot teams during the submission period.** The
+  claim that out-of-band change is a dominant source of incidents rests on prior research
+  and on the authors' experience, not on interviews conducted for this build. There was no
+  pilot access, so no amount of schedule would have closed it.
 
 ## Safety
 
@@ -63,7 +92,7 @@ Four properties enforced structurally rather than by convention:
 Per the hackathon's new-projects rule, stated plainly:
 
 - **All code in this repository was written during the submission period** (opened 10 August 2026). The first commit in this repo is the start of the work.
-- **A product brief and an earlier exploratory prototype predate the submission period.** Neither is included here. The product rationale in [`docs/Idea.md`](docs/Idea.md) and the technical spec in [`docs/Handoff.md`](docs/Handoff.md) derive from that prior thinking; they are design documents, not code.
+- **A product brief and an earlier exploratory prototype predate the submission period.** Neither is included here. The product rationale and the technical specification this repository is built to derive from that prior thinking; they are design documents, not code, and they are not part of the submission.
 - No other pre-existing code, template or scaffold was used beyond publicly available open-source dependencies declared in `pyproject.toml`.
 
 ## License

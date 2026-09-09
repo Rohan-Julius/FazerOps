@@ -21,7 +21,9 @@ import asyncio
 from datetime import timedelta
 
 from .collectors.base import Collector, CollectorResult
+from .collectors.cloudtrail import CloudTrailCollector
 from .collectors.github import GitHubCollector, ci_status_from
+from .collectors.helm import HelmCollector
 from .collectors.k8s_audit import K8sAuditCollector
 from .correlation.scoring import score_events
 from .ledger.store import LedgerStore
@@ -31,12 +33,18 @@ DEFAULT_WINDOW_HOURS = 4  # Handoff Q3, bounded [1, 24] by the orchestrator's to
 
 
 def build_collectors() -> list[Collector]:
-    """The registry. CloudTrail (W10) and Helm (W11) join this list as they land.
+    """All four sources Handoff §5 specifies, each working in both modes.
 
-    A source that is not yet built is absent rather than stubbed — an empty stub would
-    render as "we looked and found nothing", which is a different claim entirely.
+    A source that is not built would be absent rather than stubbed — an empty stub renders
+    as "we looked and found nothing", which is a different claim entirely. As of W10 there
+    are none absent.
     """
-    return [K8sAuditCollector(), GitHubCollector()]
+    return [
+        CloudTrailCollector(),
+        K8sAuditCollector(),
+        HelmCollector(),
+        GitHubCollector(),
+    ]
 
 
 def window_for(alert: Alert, hours: int = DEFAULT_WINDOW_HOURS) -> TimeWindow:
@@ -86,7 +94,13 @@ async def investigate(
     for result in results:
         ledger.extend(result.events)
 
-    candidates = score_events(ledger.query(radius, window), alert, radius, window)
+    candidates = score_events(ledger.query(radius, window), alert, radius, window, ledger)
+
+    # Recorded after scoring, so this alert is never its own precedent. `prior_alerts`
+    # filters on `fired_at` as well, so the order is belt-and-braces rather than load-
+    # bearing — but a durable ledger accumulates signatures across incidents, and that is
+    # the only thing that makes W14b's recurrence non-zero on anything but a cold start.
+    ledger.record_alert(alert)
 
     github = next((r for r in results if r.source == "github"), None)
     ci_status = (
