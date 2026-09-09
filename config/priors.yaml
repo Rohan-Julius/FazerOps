@@ -1,0 +1,74 @@
+# W14 — the type_prior table. Handoff §6: "a small hand-authored table. Be honest that
+# it's hand-authored."
+#
+# It is hand-authored. Every row below is a judgement about how often a kind of change
+# causes a kind of alert, written by a human from operational experience, not learned from
+# incident data — there is no incident corpus behind this product yet. Rows are stated as
+# levels rather than as tuned decimals so that nobody mistakes 0.9 for a measurement; the
+# levels map to numbers once, here, where a judge can see the whole mapping at a glance.
+#
+# The five rows Handoff §6 gives as examples are all present and are the only rows. An
+# unlisted cell is NOT an error: it falls back to `type_prior_default` in weights.yaml, a
+# declared default rather than a KeyError path. Padding this table with plausible-looking
+# extra rows would be inventing priors to make the ranking look considered.
+
+levels:
+  high: 0.90
+  medium: 0.60
+  low: 0.30
+
+# `action` values are the NormalizedAction vocabulary, so Handoff's source verbs have
+# already collapsed: CloudTrail's `Modify...` and `Put...` both normalize to `update`.
+# `resource_type` is matched case- and separator-insensitively (`DBParameterGroup` and
+# `db_parameter_group` are the same type), and may list alternatives where a source's
+# naming is not yet fixed — the CloudTrail collector (W10) is not built, so the rows it
+# will feed name both the shape it is expected to emit and the shape Handoff wrote.
+priors:
+  # Handoff §6 row 1 — the demo's own causal change. The qualifier is load-bearing: an
+  # arbitrary ConfigMap key edit is not evidence of a latency spike, and without the
+  # qualifier this row would score every ConfigMap edit in the radius as a likely cause.
+  - action: update
+    resource_type: configmap
+    alert_class: latency_spike
+    qualifier: connection_pool_key
+    level: high
+
+  - action: update # CloudTrail `ModifyDBParameterGroup`
+    resource_type: [db_parameter_group, dbparametergroup]
+    alert_class: latency_spike
+    level: high
+
+  - action: revoke # CloudTrail `RevokeSecurityGroupIngress`
+    resource_type: [security_group_ingress, security_group]
+    alert_class: connection_refused
+    level: high
+
+  # `iam_role` is in this list because that is what the collector actually emits: W10
+  # attributes a `PutRolePolicy` to the *role* rather than the policy, since the role is
+  # what a service manifest can own and therefore the only one of the two a blast radius
+  # can resolve. Without it the row is spelled the way Handoff §6 writes it and never fires.
+  - action: update # CloudTrail `PutRolePolicy` / `AttachRolePolicy`
+    resource_type: [iam_role_policy, role_policy, iam_role]
+    alert_class: auth_failure
+    level: high
+
+  - action: rollout
+    resource_type: deployment
+    alert_class: error_rate_spike
+    level: medium
+
+# Which changed field names make a ConfigMap edit "connection-pool-ish" (Handoff §6 row 1).
+# Matched as substrings against the *names* of the fields that changed — never against
+# their values, which are attacker-influenceable in a way key names are not.
+qualifiers:
+  connection_pool_key:
+    - pool
+    - maxconn
+    - max_conn
+    - maxopen
+    - max_open
+    - maxidle
+    - max_idle
+    - connection_limit
+    - conn_limit
+    - max_connections

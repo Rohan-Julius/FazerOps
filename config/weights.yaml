@@ -26,6 +26,11 @@ weights:
 # type_prior table (W14), not by moving this number.
 temporal_half_life_minutes: 40
 
+# How far back before a *past* alert W14b's recurrence looks for a matching change.
+# Matched to the default correlation window: recurrence asks the same question of history
+# that the scorer asks of now, and a different span would make the two incomparable.
+recurrence_lookback_hours: 4
+
 # Scored when the manifest has no prior for this (action, resource_type) x alert_class
 # cell. A *declared* default, not a KeyError path and not a guess — see W14.
 type_prior_default: 0.5

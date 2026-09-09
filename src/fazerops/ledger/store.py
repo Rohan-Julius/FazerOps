@@ -29,7 +29,7 @@ import json
 from collections.abc import Iterable
 from pathlib import Path
 
-from ..models import BlastRadius, ChangeEvent, TimeWindow
+from ..models import Alert, AlertClass, BlastRadius, ChangeEvent, TimeWindow
 
 DEFAULT_LEDGER_PATH = Path(".fazerops") / "ledger.jsonl"
 
@@ -46,9 +46,21 @@ class LedgerStore:
         self._path = Path(path) if path is not None else None
         self._events: dict[str, ChangeEvent] = {}
         self._by_key: dict[str, set[str]] = {}
+        self._alerts: dict[str, Alert] = {}
 
         if self._path is not None and self._path.exists():
             self._load()
+        if self._alerts_path is not None and self._alerts_path.exists():
+            self._load_alerts()
+
+    @property
+    def _alerts_path(self) -> Path | None:
+        """Alerts live beside the changes, not among them. Two record types in one
+        append-only file would make `_load`'s tolerance for a truncated final line into a
+        guess about which type the truncated line was."""
+        if self._path is None:
+            return None
+        return self._path.with_name(f"{self._path.stem}.alerts.jsonl")
 
     # ----------------------------------------------------------------------------------
     # Writing
@@ -87,9 +99,49 @@ class LedgerStore:
 
         return len(self._events) - before
 
+    def record_alert(self, alert: Alert) -> None:
+        """Remember that an alert fired. Idempotent on `alert.id`.
+
+        This is the whole memory W14b's `recurrence` needs: the ledger already holds every
+        change, so the only fact missing from a "has this shape preceded this signature
+        before?" query is that a signature occurred at all. Recording briefs, or the
+        rankings they contained, would make the feature depend on what a past scorer
+        concluded — and a scoring change would then rewrite history.
+        """
+        first_time = alert.id not in self._alerts
+        self._alerts[alert.id] = alert
+
+        if self._alerts_path is not None and first_time:
+            self._alerts_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._alerts_path.open("a", encoding="utf-8") as handle:
+                handle.write(alert.model_dump_json() + "\n")
+
     # ----------------------------------------------------------------------------------
     # Reading
     # ----------------------------------------------------------------------------------
+
+    def prior_alerts(self, alert: Alert) -> list[Alert]:
+        """Earlier alerts of the same signature — same service, same class — oldest first.
+
+        Strictly earlier: an alert never counts as its own precedent, so recording the
+        current alert before or after scoring it gives the same answer. An `unclassified`
+        alert has no signature to match on and returns nothing rather than matching every
+        other unclassified alert, which would make the feature fire on the absence of a
+        classification.
+        """
+        if alert.alert_class is AlertClass.UNCLASSIFIED:
+            return []
+
+        found = [
+            past
+            for past in self._alerts.values()
+            if past.id != alert.id
+            and past.service == alert.service
+            and past.alert_class is alert.alert_class
+            and past.fired_at < alert.fired_at
+        ]
+        found.sort(key=lambda past: (past.fired_at, past.id))
+        return found
 
     def query(self, radius: BlastRadius, window: TimeWindow | None = None) -> list[ChangeEvent]:
         """Events touching `radius`, optionally inside `window`, oldest first.
@@ -162,6 +214,21 @@ class LedgerStore:
                 self._events[event.id] = event
                 for key in event.blast_radius_keys:
                     self._by_key.setdefault(key, set()).add(event.id)
+
+    def _load_alerts(self) -> None:
+        """Replay the alert history. Same tolerance for a truncated final line as `_load`,
+        and for the same reason."""
+        assert self._alerts_path is not None
+        with self._alerts_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    alert = Alert.model_validate_json(line)
+                except (ValueError, json.JSONDecodeError):
+                    continue
+                self._alerts[alert.id] = alert
 
     def _deindex(self, event_id: str) -> None:
         existing = self._events.get(event_id)
