@@ -1,0 +1,30 @@
+{
+  "release": "billing-api",
+  "namespace": "billing",
+  "history": [
+    {
+      "revision": 1,
+      "updated": "2026-09-01T14:45:02+05:30",
+      "status": "superseded",
+      "chart": "billing-api-0.1.0",
+      "app_version": "1.4.2",
+      "description": "Install complete"
+    },
+    {
+      "revision": 2,
+      "updated": "2026-09-05T15:52:41+05:30",
+      "status": "superseded",
+      "chart": "billing-api-0.1.0",
+      "app_version": "1.4.2",
+      "description": "Upgrade complete"
+    },
+    {
+      "revision": 3,
+      "updated": "2026-09-06T15:17:18+05:30",
+      "status": "deployed",
+      "chart": "billing-api-0.1.0",
+      "app_version": "1.4.2",
+      "description": "Upgrade complete"
+    }
+  ]
+}

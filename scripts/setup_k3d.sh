@@ -80,7 +80,12 @@ if [ ! -s "$AUDIT_DIR/audit.log" ]; then
   exit 1
 fi
 
-kubectl --context "k3d-$CLUSTER" apply -f "$REPO_ROOT/config/k8s/billing-api.yaml"
+# billing-api ships through Helm (W11): the Helm collector needs a real release to read a
+# history from, and W20b's rollback needs a real revision N-1 to roll back to. auth-service
+# stays a plain manifest — one release is enough to exercise the collector, and Handoff §5
+# says not to over-invest in this source.
+helm --kube-context "k3d-$CLUSTER" upgrade --install billing-api "$REPO_ROOT/charts/billing-api" \
+  --namespace billing --create-namespace --wait --timeout 120s
 kubectl --context "k3d-$CLUSTER" apply -f "$REPO_ROOT/config/k8s/auth-service.yaml"
 kubectl --context "k3d-$CLUSTER" -n billing rollout status deployment/billing-api --timeout=120s
 

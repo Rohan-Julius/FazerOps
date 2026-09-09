@@ -76,6 +76,20 @@ class ServiceManifest:
             refs.append(keys.security_group(group_id))
         for role in aws.get("iam_roles") or []:
             refs.append(keys.iam_role(role))
+        for group in aws.get("db_parameter_groups") or []:
+            refs.append(keys.db_parameter_group(group))
+        for parameter in aws.get("ssm_parameters") or []:
+            refs.append(keys.ssm_parameter(parameter))
+        for name in aws.get("secrets") or []:
+            refs.append(keys.secret(name))
+        for name in aws.get("functions") or []:
+            refs.append(keys.lambda_function(name))
+
+        helm = spec.get("helm") or {}
+        helm_namespace = helm.get("namespace") or namespace
+        if helm_namespace:
+            for release in helm.get("releases") or []:
+                refs.append(keys.helm_release(helm_namespace, release))
 
         github = spec.get("github") or {}
         for repo in github.get("repos") or []:

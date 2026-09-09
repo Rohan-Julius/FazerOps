@@ -1,0 +1,16 @@
+# W11 — the demo workload as a real Helm release.
+#
+# billing-api was applied with `kubectl apply` until 7 Sep. It is a chart now for two
+# reasons, and neither is cosmetic. The Helm collector reads `helm history`, and a history
+# with no release in it tests nothing. And W20b's `helm_rollback` needs a revision N-1 to
+# roll back *to* — Handoff §5 notes that revision is the inverse for free, which is only
+# true if the revisions are real.
+#
+# It also sharpens the story: billing-api ships through Helm, and the change that broke it
+# did not. That is the product's whole thesis, running on the demo cluster.
+apiVersion: v2
+name: billing-api
+description: The FazerOps demo workload — a service that ships through Helm
+type: application
+version: 0.1.0
+appVersion: "1.4.2"

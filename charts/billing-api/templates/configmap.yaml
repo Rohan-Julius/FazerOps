@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  # The names are not decorative — they must match `config/service_manifest.yaml`'s
+  # `billing-api` entry exactly, or a collected event will not resolve into the blast
+  # radius it belongs to. They are fixed rather than templated off the release name for
+  # that reason.
+  name: billing-api-config
+  namespace: {{ .Release.Namespace }}
+data:
+{{ toYaml .Values.config | indent 2 }}

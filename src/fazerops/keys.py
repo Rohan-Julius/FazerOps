@@ -73,6 +73,35 @@ def iam_role(role_name: str) -> ResourceRef:
     return ResourceRef(kind="IAMRole", name=role_name)
 
 
+def db_parameter_group(name: str) -> ResourceRef:
+    """An RDS parameter group — a real managed-database resource that costs nothing, which
+    is why W20c's Tier 2 action targets one rather than an instance."""
+    return ResourceRef(kind="DBParameterGroup", name=name)
+
+
+def ssm_parameter(name: str) -> ResourceRef:
+    return ResourceRef(kind="Parameter", name=name)
+
+
+def secret(name: str) -> ResourceRef:
+    """A Secrets Manager secret. Distinct from `k8s_secret`, which is namespaced — the two
+    produce different keys on purpose, because they are different objects in different
+    control planes that happen to share a word."""
+    return ResourceRef(kind="Secret", name=name)
+
+
+def lambda_function(name: str) -> ResourceRef:
+    return ResourceRef(kind="Function", name=name)
+
+
+def helm_release(namespace: str, name: str) -> ResourceRef:
+    """A Helm release is namespaced like a Kubernetes object and keyed like one, so a
+    release and the workload it manages sit in the same coordinate system — which is what
+    lets the ledger deduplicate the Helm collector against the K8s audit collector when
+    both observe the same upgrade."""
+    return ResourceRef(kind="HelmRelease", name=name, namespace=namespace)
+
+
 def github_repo(full_name: str) -> ResourceRef:
     return ResourceRef(kind="Repo", name=full_name)
 

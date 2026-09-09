@@ -14,18 +14,146 @@ fixture, and would keep passing right up until a judge asked what happens when s
 
 from __future__ import annotations
 
+import asyncio
+import json
+import os
+import urllib.error
+import urllib.parse
+import urllib.request
 from typing import Any
 
+from ..config import require_offline_capable
 from ..ledger.normalize import blast_radius_keys, normalize_action, normalize_actor
-from ..models import BlastRadius, ChangeEvent, CIStatus, ResourceRef
+from ..models import BlastRadius, ChangeEvent, CIStatus, ResourceRef, TimeWindow
 from .base import BaseCollector, CollectorResult
+
+API_ROOT = "https://api.github.com"
+HTTP_TIMEOUT_SECONDS = 15
+
+# Merges and direct pushes are both collected (W11) and are told apart by this prefix.
+# The distinction is load-bearing rather than cosmetic: `ci_status_from` counts merges, and
+# a direct push to the default branch is precisely a change that did *not* ship through a
+# pull request. Counting it as one would weaken the product's central claim on the exact
+# case the product exists to catch.
+PUSH_REF_PREFIX = "github-push:"
 
 
 class GitHubCollector(BaseCollector):
+    """Merged pull requests and direct pushes to the default branch (Handoff §5).
+
+    Pushes matter as much as merges here. A `git push` straight to `main` skips review
+    entirely, and it is the one kind of GitHub change that looks, from every other source,
+    exactly like a deploy nobody authorised.
+    """
+
     source = "github"
     fixture_dir = "github"
 
+    async def _fetch_live(
+        self, radius: BlastRadius, window: TimeWindow
+    ) -> list[dict[str, Any]]:
+        """One pass per repo in the radius: merged PRs, then default-branch commits.
+
+        Repos come from the blast-radius keys rather than from a second read of the
+        manifest, so this collector and `ci_status_from` can never disagree about where
+        they looked — the brief's "nothing shipped through CI" line names the repos, and
+        the claim is only as strong as the two agreeing.
+        """
+        require_offline_capable("GitHubCollector")
+
+        payloads: list[dict[str, Any]] = []
+        for repo in _repos_in(radius):
+            repository = await self._get(f"/repos/{repo}")
+            branch = repository.get("default_branch", "main")
+
+            pulls = await self._get(
+                f"/repos/{repo}/pulls",
+                state="closed",
+                base=branch,
+                sort="updated",
+                direction="desc",
+                per_page="100",
+            )
+            payloads.extend(pulls)
+
+            merge_shas = {pull.get("merge_commit_sha") for pull in pulls if pull.get("merged_at")}
+            commits = await self._commits(repo, branch, window)
+
+            for commit in commits:
+                if commit.get("sha") in merge_shas:
+                    continue
+                # A merge commit's own parents also appear in this listing, so "not a merge
+                # commit we already have" is not enough. Asking GitHub which PRs a commit
+                # belongs to is one extra call per commit, and a 4-hour window holds few.
+                associated = await self._get(f"/repos/{repo}/commits/{commit['sha']}/pulls")
+                if any(pull.get("merged_at") for pull in associated):
+                    continue
+                payloads.append({**commit, "repo": repo, "branch": branch})
+
+        return payloads
+
+    async def _commits(
+        self, repo: str, branch: str, window: TimeWindow
+    ) -> list[dict[str, Any]]:
+        """Default-branch commits in the window.
+
+        **An empty repository answers 409, not 200 with an empty list.** GitHub treats
+        "this repo has no commits yet" as a conflict on the commits endpoint, and a repo
+        with no commits is a perfectly ordinary thing for a service manifest to name —
+        newly created, or migrated and not yet pushed.
+
+        Letting that 409 propagate would set `Brief.degraded` and make an empty repository
+        indistinguishable from an auth failure, which inverts the meaning of the CI-status
+        line: "we could not look" would render as "nothing shipped". Found by
+        `tests/collectors/test_github_live.py` against a real empty repository — no
+        fixture-backed test could have produced it.
+        """
+        try:
+            return await self._get(
+                f"/repos/{repo}/commits",
+                sha=branch,
+                since=window.start.isoformat().replace("+00:00", "Z"),
+                until=window.end.isoformat().replace("+00:00", "Z"),
+                per_page="100",
+            )
+        except urllib.error.HTTPError as exc:
+            if exc.code == 409:
+                return []
+            raise
+
+    async def _get(self, path: str, **params: str) -> Any:
+        """One authenticated GET. A 404 on a private repo is indistinguishable from a
+        missing one, so failures propagate to `CollectorResult.error` and set
+        `Brief.degraded` — the brief must never report "nothing shipped" because it was
+        not allowed to look."""
+        url = f"{API_ROOT}{path}"
+        if params:
+            url = f"{url}?{urllib.parse.urlencode(params)}"
+
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "fazerops",
+        }
+        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        def call() -> Any:
+            request = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+                return json.loads(response.read().decode("utf-8"))
+
+        return await asyncio.to_thread(call)
+
     def _normalize(self, raw: dict[str, Any]) -> ChangeEvent | None:
+        # A commit payload carries `sha`; a pull-request payload carries `number`. Both
+        # shapes are GitHub's own, so fixture mode replays what the API returns.
+        if "sha" in raw and "commit" in raw:
+            return self._normalize_push(raw)
+        return self._normalize_merge(raw)
+
+    def _normalize_merge(self, raw: dict[str, Any]) -> ChangeEvent | None:
         merged_at = raw.get("merged_at")
         if not merged_at:
             return None  # an open or closed-unmerged PR shipped nothing
@@ -51,6 +179,45 @@ class GitHubCollector(BaseCollector):
             raw_ref=f"github:{repo}#{raw['number']}",
         )
 
+    def _normalize_push(self, raw: dict[str, Any]) -> ChangeEvent | None:
+        """A commit on the default branch with no merged pull request behind it.
+
+        Handoff §5 asks for these explicitly, and they are the GitHub-shaped version of the
+        product's whole thesis: a change that reached production without anyone reviewing
+        it. `in_band` is false for that reason — the commit exists, but nothing about it
+        went through the pull-request pipeline the CI-status line is talking about.
+        """
+        repo = raw.get("repo") or ((raw.get("base") or {}).get("repo") or {}).get("full_name")
+        committed_at = ((raw.get("commit") or {}).get("committer") or {}).get("date")
+        if not repo or not committed_at:
+            return None
+
+        resource = ResourceRef(kind="Repo", name=repo)
+        login = (raw.get("author") or {}).get("login")
+        author_name = ((raw.get("commit") or {}).get("author") or {}).get("name", "")
+
+        return ChangeEvent(
+            id=f"gh-{repo}-{raw['sha'][:12]}",
+            source="github",
+            occurred_at=committed_at,
+            actor=normalize_actor(login or author_name, "github"),
+            action=normalize_action("push", "github"),
+            resource=resource,
+            blast_radius_keys=blast_radius_keys(resource),
+            in_band=False,
+            reversible=False,
+            raw_ref=f"{PUSH_REF_PREFIX}{repo}@{raw['sha']}",
+        )
+
+
+def _repos_in(radius: BlastRadius) -> list[str]:
+    return sorted(key.split(":", 1)[1] for key in radius.keys if key.startswith("repo:"))
+
+
+def is_merge(event: ChangeEvent) -> bool:
+    """Whether a GitHub event shipped through a pull request. See `PUSH_REF_PREFIX`."""
+    return not event.raw_ref.startswith(PUSH_REF_PREFIX)
+
 
 def ci_status_from(result: CollectorResult, radius: BlastRadius) -> CIStatus:
     """Build the brief's CI-status line from collected data, never from an assumption.
@@ -59,8 +226,8 @@ def ci_status_from(result: CollectorResult, radius: BlastRadius) -> CIStatus:
     true upstream — otherwise an auth error would silently render as the strongest claim
     the product makes.
     """
-    repos = sorted(key.split(":", 1)[1] for key in radius.keys if key.startswith("repo:"))
-    return CIStatus(merge_count=len(result.events), repos_checked=repos)
+    merges = [event for event in result.events if is_merge(event)]
+    return CIStatus(merge_count=len(merges), repos_checked=_repos_in(radius))
 
 
 def render_ci_status(ci_status: CIStatus) -> str:

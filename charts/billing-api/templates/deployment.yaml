@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: billing-api
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: billing-api
+  template:
+    metadata:
+      labels:
+        app: billing-api
+    spec:
+      containers:
+        - name: billing-api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+            - containerPort: 80
+          # The ConfigMap is mounted rather than injected as env so that an edit is a
+          # plausible thing for an on-call engineer to do by hand at 14:03 — and so that
+          # the edit does not require a rollout to matter.
+          volumeMounts:
+            - name: config
+              mountPath: /etc/billing-api
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+      volumes:
+        - name: config
+          configMap:
+            name: billing-api-config

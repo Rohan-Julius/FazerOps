@@ -18,6 +18,19 @@ services:
         - arn:aws:elasticache:us-east-1:111122223333:cluster:billing-cache
       security_groups: [sg-0a1b2c3d]
       iam_roles: [billing-api-task-role]
+      # The resources the recorded CloudTrail events actually touch (W10a). Without these
+      # the events normalize correctly and are then filtered out of every brief, which is
+      # the silent failure keys.py exists to prevent: a change written under one key and
+      # queried under another looks exactly like no change at all.
+      db_parameter_groups: [billing-primary-params]
+      ssm_parameters: [/billing-api/pool/max]
+      secrets: [billing-api/db]
+      functions: [billing-api-worker]
+    # billing-api ships through Helm — `charts/billing-api`, installed by
+    # scripts/setup_k3d.sh. The release is what the Helm collector reads a history from,
+    # and W20b rolls back. The namespace defaults to the kubernetes one above.
+    helm:
+      releases: [billing-api]
     github:
       repos: [faber-demo/billing-api]
     depends_on: [auth-service, billing-db]

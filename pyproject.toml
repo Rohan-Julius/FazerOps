@@ -39,6 +39,8 @@ pythonpath = ["src"]
 asyncio_mode = "auto"
 markers = [
     "cluster: requires a running k3d cluster (excluded from the CI default suite)",
+    "github: requires network access to api.github.com and FAZEROPS_GITHUB_TEST_REPO (excluded from the CI default suite). Read-only and free.",
+    "aws: requires live AWS credentials (excluded from the CI default suite). Read-only and free \u2014 lookup_events on management events is not metered, and nothing under this marker may create a resource.",
 ]
 
 [tool.ruff]

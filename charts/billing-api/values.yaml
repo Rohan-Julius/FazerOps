@@ -1,0 +1,18 @@
+replicaCount: 1
+
+image:
+  repository: nginx
+  tag: "1.27-alpine"
+
+# Idea §7: the demo edit is `pool.max: "100" -> "20"`, made by hand against the live
+# ConfigMap. These are the pre-incident values, so the cluster starts where the story
+# starts — and the hand edit is genuinely out-of-band, drift from what the chart declares.
+config:
+  pool.max: "100"
+  pool.min: "5"
+  timeout: "30s"
+
+# Not a credential: a fixed placeholder so the redaction path (collectors/k8s_audit.py
+# rewrites Secret diff values to `<redacted>`) has a real Secret to exercise. Nothing
+# reads this value.
+dbPassword: "not-a-real-password"

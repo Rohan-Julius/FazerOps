@@ -1,0 +1,14 @@
+[
+  {
+    "sha": "ba1d90f74c9e2c1d5f8a0b3e7d24c6a91f0e5b82",
+    "repo": "faber-demo/billing-api",
+    "branch": "main",
+    "commit": {
+      "author": { "name": "Dinesh Raman", "date": "2026-09-06T12:40:09Z" },
+      "committer": { "name": "Dinesh Raman", "date": "2026-09-06T12:40:09Z" },
+      "message": "hotfix: drop the retry ceiling"
+    },
+    "author": { "login": "dinesh-r" },
+    "parents": [{ "sha": "5c0a71e2fb3d48a9c6127e0b4d8f39a05e6c1d47" }]
+  }
+]

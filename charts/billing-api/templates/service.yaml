@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-api
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: billing-api
+  ports:
+    - port: 80
+      targetPort: 80
