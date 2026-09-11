@@ -26,6 +26,20 @@ paths = [
   # into `fixtures/` without stripping it — W7b takes only the six demo events.
   '''\.k3d/''',
 
+  # `.env` holds real credentials — a Gemini API key, and Slack tokens later. That is what
+  # the file is *for*, and it is gitignored, so nothing in it can reach a commit. Like
+  # `.k3d/` above it only surfaces under `gitleaks detect --no-git`, which scans the
+  # working tree regardless of .gitignore.
+  #
+  # **This entry is only safe while `.env` stays gitignored, and that premise is enforced,
+  # not assumed:** `tests/test_no_secrets.py::test_dotenv_is_gitignored` fails if the
+  # ignore rule is ever removed. Without that interlock this allowlist would be the exact
+  # thing the header above forbids.
+  #
+  # Left un-allowlisted, the documented pre-push command goes red for every developer who
+  # has a working `.env` — and a check that cries wolf is a check people stop reading.
+  '''\.env$''',
+
   # tests/test_no_secrets.py carries one synthetic sample per credential pattern, so that
   # a regex which matches nothing cannot pass the scan for the wrong reason. Allowlisting
   # the file is what lets that test exist at all.
