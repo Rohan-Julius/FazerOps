@@ -1,0 +1,23 @@
+{
+  "77c82cd6a8f0d354": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "claims": [
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "Dinesh updated the billing-api-config ConfigMap and reduced pool.max from 100 to 20."
+        },
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "The database connection pool exhaustion directly explains the latency spike and error rate increase on the billing-api service."
+        }
+      ],
+      "confidence": "high",
+      "primary_cause_event_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+    }
+  }
+}

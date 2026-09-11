@@ -1,7 +1,7 @@
 """The two orthogonal switches the whole build runs on (plan §5).
 
     FAZEROPS_MODE = fixture | live                       where collector data comes from
-    FAZEROPS_LLM  = stub | cassette | record | nova | demo | sonnet
+    FAZEROPS_LLM  = stub | cassette | record | nova | demo | sonnet | gemini
 
 `fixture` + `stub` is the zero-credential, zero-network path — the CI default, and the
 path a judge hits on a clean machine with no AWS config. It is guarded by
@@ -41,6 +41,12 @@ class LlmMode(str, Enum):
 
     SONNET = "sonnet"
     """Target path if Anthropic access lands. Wired but currently unreachable."""
+
+    GEMINI = "gemini"
+    """**The active path from 11 Sep** (plan §9.2). Bedrock inference is blocked
+    account-wide, so the three agents run on Gemini rather than on a stub — a stub would
+    make the agent claim hollow. Bedrock stays wired: this is a fallback, not a
+    destination, and §9.2 names the reversal."""
 
 
 OFFLINE_LLM_MODES = frozenset({LlmMode.STUB, LlmMode.CASSETTE})
