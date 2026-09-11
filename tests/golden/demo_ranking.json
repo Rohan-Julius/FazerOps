@@ -1,0 +1,62 @@
+{
+  "_comment": [
+    "W15 — the demo's expected ranking, asserted. This file IS the demo: if it goes red,",
+    "the 90-second narrative on camera is wrong and no amount of good engineering rescues",
+    "it (plan §2, tier B).",
+    "",
+    "Candidates are identified by resource, not by event id. The ids in `evidence_id` are",
+    "real auditIDs from `fixtures/k8s_audit/`, recorded from a live API server (W7b), and",
+    "they are asserted too — but as a provenance check, so that re-recording the fixture",
+    "fails loudly here rather than silently re-ranking a different set of events.",
+    "",
+    "Scores are BANDS, not literals. A literal would make every legitimate weight tune a",
+    "test edit, which is how a golden test stops guarding anything. The bands are wide",
+    "enough to survive tuning inside Handoff §6's stated ranges and narrow enough that a",
+    "feature returning a constant falls out of them."
+  ],
+  "alert": {
+    "fixture": "fixtures/alerts/alertmanager.json",
+    "service": "billing-api",
+    "alert_class": "latency_spike",
+    "window_hours": 4
+  },
+  "minimum_rank_1_margin": 0.15,
+  "candidates": [
+    {
+      "rank": 1,
+      "evidence_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6",
+      "resource_kind": "ConfigMap",
+      "resource_name": "billing-api-config",
+      "blast_radius_key": "k8s:billing/configmap/billing-api-config",
+      "action": "update",
+      "source": "k8s_audit",
+      "in_band": false,
+      "score_band": [0.70, 0.90],
+      "why": "The causal change. Direct hit on the radius, 38 minutes before the alert, and Handoff §6's (update, configmap, connection-pool key) x latency_spike prior."
+    },
+    {
+      "rank": 2,
+      "evidence_id": "3c5ddd53-790c-4329-a689-608f920ab5e6",
+      "resource_kind": "Secret",
+      "resource_name": "billing-api-db",
+      "blast_radius_key": "k8s:billing/secret/billing-api-db",
+      "action": "update",
+      "source": "k8s_audit",
+      "in_band": true,
+      "score_band": [0.45, 0.62],
+      "why": "Direct hit, but 191 minutes back and no prior links a secret rotation to latency. Ranks second on temporal decay alone."
+    },
+    {
+      "rank": 3,
+      "evidence_id": "9269cea9-2c12-417c-891a-3729837380a9",
+      "resource_kind": "ConfigMap",
+      "resource_name": "auth-service-config",
+      "blast_radius_key": "k8s:auth/configmap/auth-service-config",
+      "action": "update",
+      "source": "k8s_audit",
+      "in_band": false,
+      "score_band": [0.28, 0.45],
+      "why": "A one-hop dependency, so radius_overlap is 0.5 and it cannot reach rank 1 however recent it is. Out of band, like rank 1 — which is precisely why in_band must not be an input."
+    }
+  ]
+}
