@@ -1,0 +1,25 @@
+# W20 — tier promotion. Handoff §7.
+#
+# **Promotion only. Nothing here can ever demote an action.** The catalog's declared tier is
+# a floor, and this file can only raise it. A demotion rule would mean an attacker who can
+# influence a parameter value — a resource count, a namespace name — can lower the approval
+# bar on a mutation, which is the entire threat model in one line.
+#
+# `actions.catalog.effective_tier()` applies these; `tests/unit/test_catalog_schema.py`
+# asserts the one-way property directly rather than trusting the rules below to be written
+# correctly.
+
+promote_to_tier_2:
+  # Handoff §7's three named conditions.
+
+  # A mutation whose estimated monthly cost delta exceeds this stops being an IC decision.
+  # Unset for every action shipped today — none of the three has a cost model — and present
+  # because the rule is what the Handoff specifies, not because the demo exercises it.
+  estimated_cost_delta_usd: 100.0
+
+  # A revert that touches one key is routine; one that rewrites a hundred is a migration.
+  resource_count: 10
+
+  # A blast radius crossing a namespace boundary is, by construction, a change whose
+  # consequences land on a team that did not ask for it.
+  crosses_namespace_boundary: true

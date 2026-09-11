@@ -1,0 +1,69 @@
+# W20 — the action catalog. Handoff §7, all three actions.
+#
+# This file is the ONLY place an action comes from. The model selects an `id` from here and
+# supplies parameters validated against the `params` schema below; it never emits a command
+# string, a resource identifier or an import path (ground rule #1). If an action is not in
+# this file it cannot be proposed, and if a proposed action's parameters do not match the
+# schema the proposal is rejected before any client is constructed.
+#
+# **Tier is declared here and never inferred at runtime.** `thresholds.yaml` may *promote*
+# Tier 1 → Tier 2; nothing ever demotes. A runtime-inferred tier is a tier an attacker can
+# argue with.
+#
+# **No declared-but-unimplemented entries.** Every `executor` below resolves to a real
+# callable and every action has a working `dry_run` and `inverse` — a catalog entry with no
+# executor is a live path to an ImportError mid-demo.
+
+actions:
+  - id: revert_configmap_key
+    tier: 1
+    description: Restore a single ConfigMap key to a prior value
+    params:
+      namespace: {type: str, required: true}
+      name: {type: str, required: true}
+      key: {type: str, required: true}
+      target_value: {type: str, required: true}
+    preconditions:
+      - configmap_exists
+      - prior_value_known
+    dry_run: kubectl_diff
+    # The inverse of reverting a key is reverting it again, with the *current* value as the
+    # target. Handoff §7 writes it exactly this way: the action is its own inverse, which is
+    # why ground rule #4 is cheap here and expensive elsewhere.
+    inverse: revert_configmap_key
+    executor: fazerops.actions.executors.configmap:revert_key
+
+  - id: helm_rollback
+    tier: 1
+    description: Roll a Helm release back to an earlier revision
+    params:
+      release: {type: str, required: true}
+      namespace: {type: str, required: true}
+      target_revision: {type: int, required: true}
+    preconditions:
+      - release_exists
+      - target_revision_exists
+    dry_run: helm_diff_revision
+    # Handoff §5: revision N−1 gives the inverse for free — rolling back to the revision
+    # that is current right now restores exactly the state this action replaces.
+    inverse: helm_rollback
+    executor: fazerops.actions.executors.helm:rollback
+
+  - id: restore_db_parameter
+    # Tier 2 because it touches a managed database. An RDS *parameter group*, never an
+    # instance: a genuine managed-database mutation that justifies the tier honestly, costs
+    # nothing (only instances bill), and emits a real ModifyDBParameterGroup event.
+    tier: 2
+    description: Restore a single RDS parameter-group parameter to a prior value
+    requires_approval_from: manager
+    params:
+      parameter_group: {type: str, required: true}
+      parameter: {type: str, required: true}
+      target_value: {type: str, required: true}
+      apply_method: {type: str, required: false, enum: [immediate, pending-reboot]}
+    preconditions:
+      - parameter_group_exists
+      - prior_value_known
+    dry_run: rds_parameter_diff
+    inverse: restore_db_parameter
+    executor: fazerops.actions.executors.rds:restore_parameter
