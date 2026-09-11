@@ -57,19 +57,38 @@ async def main() -> int:
 
     from fazerops.agents.budget import TokenMeter
     from fazerops.agents.correlator import correlate
+    from fazerops.agents.orchestrator import orchestrate
     from fazerops.ingest.alerts import normalize_alert
     from fazerops.pipeline import investigate
 
     alert_path = REPO_ROOT / "fixtures" / "alerts" / "alertmanager.json"
     alert = normalize_alert(json.loads(alert_path.read_text(encoding="utf-8")))
-    brief = await investigate(alert)
-
-    print(f"brief: {len(brief.candidates)} candidates, rank 1 = {brief.top.event.resource.name}")
 
     meter = TokenMeter()
+
+    # The orchestrator first, and on its own rather than implicitly through `investigate`.
+    # Recording it here means the run that writes the tape is the run whose decision is
+    # asserted, and a loop that never dispatches is visible right now instead of surfacing
+    # as a degraded brief in CI three days later.
+    plan = await orchestrate(alert, meter=meter)
+    print(
+        f"recorded orchestrator cassette: service={plan.service} "
+        f"window={plan.window.hours:.0f}h dispatched={plan.dispatched}"
+    )
+    if not plan.dispatched:
+        print(
+            f"error: the orchestrator did not dispatch ({plan.note}). Nothing was recorded "
+            "for it — a cassette of a degraded run replays as the agent working.",
+            file=sys.stderr,
+        )
+        return 1
+
+    brief = await investigate(alert)
+    print(f"brief: {len(brief.candidates)} candidates, rank 1 = {brief.top.event.resource.name}")
+
     narrative = await correlate(brief, meter=meter)
 
-    print(f"\nrecorded correlator cassette ({meter.tokens} tokens, ${meter.usd:.6f})")
+    print(f"\nrecorded correlator cassette ({meter.tokens} tokens, ${meter.usd:.6f} total)")
     print(f"  confidence: {narrative.confidence}")
     print(f"  claims kept: {len(narrative.claims)}  dropped: {len(narrative.dropped)}")
     for claim in narrative.claims:
@@ -83,9 +102,16 @@ async def main() -> int:
     # Replay immediately. A cassette that was written but cannot be found by the key the
     # replay path derives is worse than no cassette — it passes recording and fails CI.
     os.environ["FAZEROPS_LLM"] = "cassette"
+
+    replayed_plan = await orchestrate(alert)
+    assert not replayed_plan.degraded, f"orchestrator cassette did not replay: {replayed_plan.note}"
+    assert replayed_plan.service == plan.service
+    assert replayed_plan.window.hours == plan.window.hours
+
     replayed = await correlate(brief)
     assert replayed.primary_cause_event_id == narrative.primary_cause_event_id
-    print("\nreplay verified: cassette is readable by cassette mode")
+
+    print("\nreplay verified: both cassettes are readable by cassette mode")
 
     return 0
 

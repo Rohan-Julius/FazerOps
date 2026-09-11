@@ -89,3 +89,74 @@ def test_the_cassette_holds_no_orphaned_keys():
     orphans accumulate silently and make the file unreviewable — prune on re-record."""
     entries = json.loads(CASSETTE.read_text(encoding="utf-8"))
     assert len(entries) == 1, f"expected one live recording, found {list(entries)}"
+
+
+# --------------------------------------------------------------------------------------
+# W19b — the orchestrator's tape, recorded 12 Sep
+# --------------------------------------------------------------------------------------
+
+ORCHESTRATOR_CASSETTE = REPO_ROOT / "tests" / "cassettes" / "orchestrator.json"
+
+
+@pytest.fixture
+def alert():
+    payload = json.loads(
+        (REPO_ROOT / "fixtures" / "alerts" / "alertmanager.json").read_text(encoding="utf-8")
+    )
+    return normalize_alert(payload)
+
+
+@pytest.mark.skipif(
+    not ORCHESTRATOR_CASSETTE.is_file(), reason="no orchestrator cassette recorded yet"
+)
+def test_the_orchestrator_cassette_replays_without_degrading(alert, monkeypatch):
+    """**The assertion that distinguishes a real tape from a missing one.**
+
+    A cassette miss degrades rather than raising (`orchestrate` never raises on a model
+    failure), which keeps the correlator's own tests runnable but means a missing tape is
+    *silent in the pass column*. `degraded is False` is the only thing that says the
+    orchestrator actually replayed — every other field is identical to what the
+    deterministic fallback produces.
+    """
+    from fazerops.agents.orchestrator import orchestrate
+
+    monkeypatch.setenv("FAZEROPS_LLM", "cassette")
+    plan = asyncio.run(orchestrate(alert))
+
+    assert plan.degraded is False, f"the tape did not replay: {plan.note}"
+    assert plan.note is None
+    assert plan.dispatched is True
+
+
+@pytest.mark.skipif(
+    not ORCHESTRATOR_CASSETTE.is_file(), reason="no orchestrator cassette recorded yet"
+)
+def test_the_real_model_chose_the_demos_scope(alert, monkeypatch):
+    """What a live `gemini-3.5-flash-lite` actually decided for the demo alert, on 12 Sep.
+
+    Not a restatement of the fallback: the fallback resolves `alert.service`, and this
+    asserts the *model* reached the same answer through three manifest-bounded tool calls.
+    If a prompt edit makes it choose differently, the demo's candidate set changes and this
+    is what says so.
+    """
+    from fazerops.agents.orchestrator import orchestrate
+
+    monkeypatch.setenv("FAZEROPS_LLM", "cassette")
+    plan = asyncio.run(orchestrate(alert))
+
+    assert plan.service == "billing-api"
+    assert plan.window.hours == 4
+    assert plan.radius.keys, "the chosen scope must resolve to a non-empty radius"
+
+
+@pytest.mark.skipif(
+    not ORCHESTRATOR_CASSETTE.is_file(), reason="no orchestrator cassette recorded yet"
+)
+def test_the_cassette_records_which_model_produced_the_orchestrator_tape():
+    """A tape with no model id cannot be audited after a model switch — and plan §9.2's
+    reversal is a model switch."""
+    entries = json.loads(ORCHESTRATOR_CASSETTE.read_text(encoding="utf-8"))
+
+    assert entries, "an empty cassette file is worse than none — it replays as a miss"
+    assert all(entry["model"] for entry in entries.values())
+    assert all("service" in entry["response"] for entry in entries.values())

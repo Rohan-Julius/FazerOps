@@ -1,0 +1,9 @@
+{
+  "a5670217bfeee48f": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "service": "billing-api",
+      "window_hours": 4
+    }
+  }
+}
