@@ -51,6 +51,24 @@ def automation_layer_deleted(monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", _guarded_import)
 
+    # **`builtins.__import__` alone is not the guard it looks like.** An `import x` statement
+    # goes through it; `importlib.import_module` does not — it calls `_bootstrap._find_and_load`
+    # directly. Before `fazerops.actions.catalog` existed, the guard test below passed because
+    # the module was simply absent (`ModuleNotFoundError` is an `ImportError`), so the hole was
+    # invisible until W20 created the module (11 Sep). A `meta_path` finder closes both routes,
+    # because every import that is not already in `sys.modules` consults it.
+    class _Blocker:
+        @staticmethod
+        def find_spec(name, path=None, target=None):
+            if name.startswith(AUTOMATION_MODULES):
+                raise ImportError(
+                    f"{name} is in the automation layer; the investigation layer must not "
+                    "import it (plan §3.5)"
+                )
+            return None
+
+    monkeypatch.setattr(sys, "meta_path", [_Blocker(), *sys.meta_path])
+
 
 async def test_a_complete_brief_renders_with_the_automation_layer_deleted(
     automation_layer_deleted, monkeypatch
@@ -77,10 +95,21 @@ async def test_a_complete_brief_renders_with_the_automation_layer_deleted(
     assert "Nothing shipped through CI in this window." in rendered
 
 
-def test_the_guard_actually_blocks_the_automation_layer(automation_layer_deleted):
-    """A guard that does not guard passes every test for the wrong reason."""
-    with pytest.raises(ImportError):
-        importlib.import_module("fazerops.actions.catalog")
+@pytest.mark.parametrize(
+    "module_name",
+    ["fazerops.actions.catalog", "fazerops.actions", "fazerops.security.credentials"],
+)
+def test_the_guard_actually_blocks_the_automation_layer(automation_layer_deleted, module_name):
+    """A guard that does not guard passes every test for the wrong reason — and this one
+    did, for five days.
+
+    `fazerops.actions.catalog` did not exist until W20, so `import_module` raised
+    `ModuleNotFoundError` and the test was green for a reason that had nothing to do with
+    the guard. `fazerops.actions.catalog` is now a real module, which is why the parameters
+    below name modules that exist: a guard proved against a missing module proves nothing.
+    """
+    with pytest.raises(ImportError, match="automation layer"):
+        importlib.import_module(module_name)
 
 
 @pytest.mark.parametrize(

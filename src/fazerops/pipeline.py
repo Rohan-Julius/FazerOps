@@ -82,10 +82,14 @@ async def investigate(
     The default ledger is in-memory, so the fixture demo leaves no state on a judge's
     machine. A caller wanting durable history passes `LedgerStore(path)`.
     """
-    from .radius import resolve  # local import keeps the manifest off the import path
+    from .agents.orchestrator import orchestrate
 
-    radius = resolve(alert.service)
-    window = window_for(alert, hours)
+    # W19b: scope and window are the orchestrator's decision, not this function's. In
+    # `stub` mode it resolves deterministically to exactly what `resolve(alert.service)`
+    # and `window_for(alert, hours)` produced before — which is why the golden ranking
+    # test is unchanged by this wiring.
+    plan = await orchestrate(alert, hours=hours)
+    radius, window = plan.radius, plan.window
     collectors = collectors if collectors is not None else build_collectors()
 
     results = await gather_changes(collectors, radius, window)
@@ -107,10 +111,13 @@ async def investigate(
         ci_status_from(github, radius) if github is not None else CIStatus(merge_count=0)
     )
 
-    # Degraded when any source failed, or when the alert named a service the manifest does
-    # not know. Both produce a thinner brief that would otherwise read as a confident
-    # "nothing changed" — the one failure mode that is worse than no brief at all.
-    degraded = any(not result.ok for result in results) or not radius.keys
+    # Degraded when any source failed, when the alert named a service the manifest does not
+    # know, or when the orchestrator did not finish choosing scope. All three produce a
+    # thinner brief that would otherwise read as a confident "nothing changed" — the one
+    # failure mode that is worse than no brief at all.
+    degraded = (
+        any(not result.ok for result in results) or not radius.keys or plan.degraded
+    )
 
     return Brief(
         incident_id=f"INC-{alert.id}",
