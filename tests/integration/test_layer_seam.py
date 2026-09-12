@@ -124,6 +124,14 @@ def test_the_guard_actually_blocks_the_automation_layer(automation_layer_deleted
         "fazerops.correlation.scoring",
         "fazerops.collectors.k8s_audit",
         "fazerops.collectors.github",
+        # Added with W22 (12 Sep). `graph.py`'s docstring has claimed to be automation-free
+        # since W19; until the proposer existed there was nothing tempting it to import
+        # `actions/`, so the claim had never been tested. W22 is exactly that temptation —
+        # the diagram's `correlator → proposer` edge — and it is why the proposer arrives
+        # as an injected node factory rather than as an import.
+        "fazerops.agents.graph",
+        "fazerops.agents.orchestrator",
+        "fazerops.agents.correlator",
     ],
 )
 def test_every_investigation_module_imports_cleanly_without_automation(

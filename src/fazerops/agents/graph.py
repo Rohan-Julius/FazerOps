@@ -85,6 +85,7 @@ class InvestigationState:
         self.plan: Plan | None = None
         self.results: list[CollectorResult] = []
         self.narrative: Any | None = None
+        self.proposal: Any | None = None
         self.node_errors: dict[str, str] = {}
 
     @property
@@ -267,12 +268,19 @@ def build_investigation_graph(
     *,
     collectors: list[Collector] | None = None,
     node_timeout: float = NODE_TIMEOUT_SECONDS,
+    proposer_node: Callable[[InvestigationState], Any] | None = None,
 ) -> Any:
     """Assemble the topology of plan §3.2.
 
-    W22's proposer is not wired in yet — it is Sep 11's work, and a node declared before
-    its agent exists is the same defect as a catalog entry with no executor (plan §4, W20).
-    The edge is a one-liner when it lands.
+    **W22's proposer arrives by injection, not by import, and that is the seam** (plan
+    §3.5). The proposer reads the action catalog, so a graph module that imported it would
+    be an investigation-layer module importing `actions/` — exactly what the seam forbids,
+    and what `tests/integration/test_layer_seam.py` exists to catch. Passing a node factory
+    keeps this module automation-free while still building the diagram's full topology when
+    the automation layer is present: `correlator → proposer`, one edge.
+
+    With no factory the graph is the investigation alone, which is the Tier 0 product and
+    must keep working with the automation layer deleted.
     """
     from strands.multiagent import GraphBuilder
 
@@ -294,6 +302,10 @@ def build_investigation_graph(
         builder.add_edge("orchestrator", collector.source)
         builder.add_edge(collector.source, "correlator")
 
+    if proposer_node is not None:
+        builder.add_node(proposer_node(state), "proposer")
+        builder.add_edge("correlator", "proposer")
+
     builder.set_entry_point("orchestrator")
     builder.set_node_timeout(node_timeout * GRAPH_TIMEOUT_MULTIPLE)
     # One execution per node plus headroom. Bounds a cycle if an edge is ever added that
@@ -307,11 +319,22 @@ async def investigate_via_graph(
     *,
     collectors: list[Collector] | None = None,
     node_timeout: float = NODE_TIMEOUT_SECONDS,
+    proposer_node: Callable[[InvestigationState], Any] | None = None,
 ) -> tuple[Brief, Any]:
     """Run one investigation through the Strands Graph. Returns the brief and the graph
-    result, so a caller (and `test_graph_topology.py`) can inspect `execution_order`."""
+    result, so a caller (and `test_graph_topology.py`) can inspect `execution_order`.
+
+    Any proposal the injected proposer node produced is left on `state.proposal` rather
+    than returned. The `Brief` is the seam's contract and a `Proposal` is not part of it
+    (plan §3.5); a caller on the automation side holds the state and reads it from there.
+    """
     state = InvestigationState(alert)
-    graph = build_investigation_graph(state, collectors=collectors, node_timeout=node_timeout)
+    graph = build_investigation_graph(
+        state,
+        collectors=collectors,
+        node_timeout=node_timeout,
+        proposer_node=proposer_node,
+    )
 
     result = await graph.invoke_async(
         f"Investigate alert {alert.id} on {alert.service}."
