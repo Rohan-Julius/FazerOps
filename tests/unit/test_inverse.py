@@ -217,17 +217,23 @@ def test_execute_computes_the_inverse_itself_rather_than_trusting_the_caller():
     the entire reason the guard exists.
 
     Asserted by reaching the executor only when an inverse exists: with a good hint *and*
-    satisfied preconditions the call gets past both guards and into `configmap:revert_key`,
-    whose mutating body is W24.
+    satisfied preconditions the call gets past both guards and into `configmap:revert_key`.
+
+    **The exception this lands on changed with W24** (12 Sep). It used to be
+    `ExecutorNotYetImplemented`, raised by the stub body; the body is now real, so the call
+    lands one step further on — `require_actor_credential`, which refuses because nothing
+    here passed through an approval handler. The assertion is stronger for it: it proves
+    the inverse and precondition guards were both cleared *and* that the executor's own
+    credential gate fires before any client is constructed (Handoff §8).
     """
-    from fazerops.actions.executors._pending import ExecutorNotYetImplemented
     from fazerops.actions.preconditions import Evidence
+    from fazerops.security.credentials import CredentialRefused
 
     forward = request_from_hint(CONFIGMAP_HINT)
     evidence = Evidence(
         resource_keys=frozenset({"k8s:billing/configmap/billing-api-config"}), complete=True
     )
-    with pytest.raises(ExecutorNotYetImplemented):
+    with pytest.raises(CredentialRefused, match="requires an actor credential"):
         forward.execute(evidence=evidence)
 
 

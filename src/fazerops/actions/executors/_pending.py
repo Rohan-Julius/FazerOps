@@ -5,15 +5,18 @@ executor is a live path to an `ImportError` mid-demo. That rule is about the **i
 every `executor:` in `config/actions.yaml` resolves to a real callable, checked at catalog
 load time by `catalog.resolve_executor`.
 
-The mutating bodies land on their own scheduled days — W24 (`configmap`, Sep 11), W20b
-(`helm`, Sep 12), W20c (`rds`, Sep 12). Until then each executor raises this, by name, with
-its work unit in the message. That is deliberately loud and deliberately *not* an
+The mutating bodies land on their own scheduled days. **`configmap` is written (W24,
+12 Sep)** and no longer raises this; `helm` (W20b) and `rds` (W20c) are Sep 12's work.
+Until then each remaining executor raises this, by name, with its work unit in the
+message. That is deliberately loud and deliberately *not* an
 ImportError: the failure is visible in a test, attributable to a known unit, and reached
 only after the inverse has already been computed and the dry run already rendered — so
 everything ground rule #4 promises is exercised regardless.
 
 `tests/unit/test_catalog_schema.py` asserts the resolvability; it will assert executability
-as each unit lands.
+as each unit lands. `tests/security/test_credential_gate.py` reads the AST of every executor
+in this package and requires each written body to call `require_actor_credential` — the ones
+still raising `pending` are skipped by that check, so the guarantee arrives with the body.
 """
 
 from __future__ import annotations
