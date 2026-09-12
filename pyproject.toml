@@ -15,8 +15,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-slack = ["slack-bolt>=1.20"]
+slack = [
+    "slack-bolt>=1.20",
+]
 cluster = ["kubernetes>=30.1"]
+# The active inference path (plan §9.2). An extra rather than a core dependency: the
+# fixture + stub quickstart a judge runs must not need it, and `uv sync` without this extra
+# is the clean-machine path W30 verifies. It was installed ad hoc until 12 Sep, which meant
+# a `uv sync` silently removed it and took the Gemini path down with it.
+gemini = ["google-genai>=1.0"]
 
 [dependency-groups]
 dev = [
@@ -35,7 +42,10 @@ packages = ["src/fazerops"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+# `.` as well as `src`, because `agentcore_app.py` lives at the repo root — that is where
+# `agentcore configure --entrypoint` expects the file it containerizes, and it is the shape
+# every example in the AWS docs uses.
+pythonpath = ["src", "."]
 asyncio_mode = "auto"
 markers = [
     "cluster: requires a running k3d cluster (excluded from the CI default suite)",
