@@ -37,7 +37,11 @@ __all__ = [
     "requires_network",
 ]
 
-AGENTS = ("orchestrator", "correlator", "proposer")
+# `writer_author` is W42's rung 3 — the one agent that writes code — and it runs off the incident
+# path, only when catalog growth has decided a writer is needed. It takes the stronger model in
+# every path: its output is read by a human and gated by an AST allowlist, and a weaker model
+# there costs rejected candidates rather than money saved.
+AGENTS = ("orchestrator", "correlator", "proposer", "writer_author")
 
 
 class Provider(str, Enum):
@@ -82,6 +86,7 @@ MODEL_ASSIGNMENT: dict[LlmMode, dict[str, str]] = {
         "orchestrator": NOVA_LITE,
         "correlator": NOVA_PRO,
         "proposer": NOVA_LITE,
+        "writer_author": NOVA_PRO,
     },
     # Target path if Anthropic access lands. Wired so that switching is a env var, not a
     # code change — but do not switch after Sep 12: an unrehearsed model change on demo
@@ -90,12 +95,14 @@ MODEL_ASSIGNMENT: dict[LlmMode, dict[str, str]] = {
         "orchestrator": HAIKU,
         "correlator": SONNET,
         "proposer": SONNET,
+        "writer_author": SONNET,
     },
     # The active path (plan §9.2). Same split as `sonnet`, different provider.
     LlmMode.GEMINI: {
         "orchestrator": GEMINI_FLASH,
         "correlator": GEMINI_PRO,
         "proposer": GEMINI_PRO,
+        "writer_author": GEMINI_PRO,
     },
 }
 

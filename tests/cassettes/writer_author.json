@@ -1,0 +1,16 @@
+{
+  "0bb22677d85ba3c6": {
+    "model": "gemini-3.1-pro-preview",
+    "response": {
+      "read_source": "def read(params, *, client):\n    obj = client.read_namespaced_config_map(name=params[\"name\"], namespace=params[\"namespace\"])\n    if obj.data is None:\n        return dict()\n    return dict(obj.data)\n",
+      "write_source": "def write(params, values, *, credential, client):\n    body = {\"data\": dict(values)}\n    obj = client.patch_namespaced_config_map(name=params[\"name\"], namespace=params[\"namespace\"], body=body)\n    return {\"namespace\": params[\"namespace\"], \"name\": params[\"name\"], \"keys\": sorted(list(values.keys())), \"resource_version\": obj.metadata.resource_version}\n"
+    }
+  },
+  "78b6aa273bdfc355": {
+    "model": "gemini-3.1-pro-preview",
+    "response": {
+      "read_source": "def read(params, *, client):\n    obj = client.read_namespaced_config_map(name=params[\"name\"], namespace=params[\"namespace\"])\n    val = obj.binary_data\n    if val:\n        return dict(val)\n    return {}",
+      "write_source": "def write(params, values, *, credential, client):\n    body = {\"binaryData\": dict(values)}\n    obj = client.patch_namespaced_config_map(name=params[\"name\"], namespace=params[\"namespace\"], body=body)\n    return {\"namespace\": params[\"namespace\"], \"name\": params[\"name\"], \"keys\": sorted(list(values.keys())), \"resource_version\": obj.metadata.resource_version}"
+    }
+  }
+}

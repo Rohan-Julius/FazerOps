@@ -79,7 +79,7 @@ OFFLINE_LLM_MODES = frozenset({LlmMode.STUB, LlmMode.CASSETTE})
 # deliberate, and a single override would quietly collapse it.
 GEMINI_MODEL_ENV = {
     agent: f"FAZEROPS_GEMINI_MODEL_{agent.upper()}"
-    for agent in ("orchestrator", "correlator", "proposer")
+    for agent in ("orchestrator", "correlator", "proposer", "writer_author")
 }
 
 

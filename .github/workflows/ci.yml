@@ -32,6 +32,32 @@ jobs:
       - name: Demo runs end to end on a clean checkout
         run: ./scripts/run_demo.sh
 
+  # Phase G, W42: an agent-authored commit may not grant permissions (`_ACTIONS_FOR`), author a
+  # tier, delete an action, or change the catalog without evidence the ledger's deployment
+  # resolved and signed. Human commits are not checked — granting scope is their job. The
+  # runner has no ledger, so it verifies the signature instead, with the same key held as a
+  # secret; with the secret unset, every agent-authored catalog change fails (fail closed).
+  catalog-growth:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      BASE_REF: ${{ github.base_ref }}
+      FAZEROPS_EVIDENCE_KEY: ${{ secrets.FAZEROPS_EVIDENCE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - run: uv sync --dev
+
+      - name: Agent-authored commits grant nothing
+        run: uv run python scripts/check_generated_pr.py commits --base "origin/$BASE_REF" --head HEAD
+
   secrets:
     runs-on: ubuntu-latest
     steps:

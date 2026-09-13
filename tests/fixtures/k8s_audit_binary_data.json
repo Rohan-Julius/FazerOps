@@ -1,0 +1,174 @@
+[
+  {
+    "kind": "Event",
+    "apiVersion": "audit.k8s.io/v1",
+    "level": "RequestResponse",
+    "auditID": "fc656b7e-df69-4a0a-b887-e96599c18852",
+    "stage": "ResponseComplete",
+    "requestURI": "/api/v1/namespaces/fazerops-capture-0e635e5c/configmaps",
+    "verb": "create",
+    "user": {
+      "username": "system:admin",
+      "groups": [
+        "system:masters",
+        "system:authenticated"
+      ],
+      "extra": {
+        "authentication.kubernetes.io/credential-id": [
+          "X509SHA256=400b4507a8589a3ac02412a5a7d544d0340693483d9a8ec07e41874b12cd03ca"
+        ]
+      }
+    },
+    "sourceIPs": [
+      "172.19.0.2"
+    ],
+    "userAgent": "OpenAPI-Generator/36.0.3/python",
+    "objectRef": {
+      "resource": "configmaps",
+      "namespace": "fazerops-capture-0e635e5c",
+      "name": "billing-api-assets",
+      "apiVersion": "v1"
+    },
+    "responseStatus": {
+      "metadata": {},
+      "code": 201
+    },
+    "requestObject": {
+      "kind": "ConfigMap",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "billing-api-assets"
+      },
+      "data": {
+        "cache.ttl": "300"
+      },
+      "binaryData": {
+        "favicon.ico": "AAABACBmYXZpY29uLCBiZWZvcmU="
+      }
+    },
+    "responseObject": {
+      "kind": "ConfigMap",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "billing-api-assets",
+        "namespace": "fazerops-capture-0e635e5c",
+        "uid": "d15529d3-f0fb-4ddd-a904-077d3d7e4344",
+        "resourceVersion": "120072",
+        "creationTimestamp": "2026-09-13T11:59:07Z",
+        "managedFields": [
+          {
+            "manager": "OpenAPI-Generator",
+            "operation": "Update",
+            "apiVersion": "v1",
+            "time": "2026-09-13T11:59:07Z",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": {
+              "f:binaryData": {
+                ".": {},
+                "f:favicon.ico": {}
+              },
+              "f:data": {
+                ".": {},
+                "f:cache.ttl": {}
+              }
+            }
+          }
+        ]
+      },
+      "data": {
+        "cache.ttl": "300"
+      },
+      "binaryData": {
+        "favicon.ico": "AAABACBmYXZpY29uLCBiZWZvcmU="
+      }
+    },
+    "requestReceivedTimestamp": "2026-09-13T11:59:07.713965Z",
+    "stageTimestamp": "2026-09-13T11:59:07.726760Z",
+    "annotations": {
+      "authorization.k8s.io/decision": "allow",
+      "authorization.k8s.io/reason": ""
+    }
+  },
+  {
+    "kind": "Event",
+    "apiVersion": "audit.k8s.io/v1",
+    "level": "RequestResponse",
+    "auditID": "a6b44ec2-e3e6-4870-97f5-a0a00aa35c5a",
+    "stage": "ResponseComplete",
+    "requestURI": "/api/v1/namespaces/fazerops-capture-0e635e5c/configmaps/billing-api-assets",
+    "verb": "patch",
+    "user": {
+      "username": "system:admin",
+      "groups": [
+        "system:masters",
+        "system:authenticated"
+      ],
+      "extra": {
+        "authentication.kubernetes.io/credential-id": [
+          "X509SHA256=400b4507a8589a3ac02412a5a7d544d0340693483d9a8ec07e41874b12cd03ca"
+        ]
+      }
+    },
+    "sourceIPs": [
+      "172.19.0.2"
+    ],
+    "userAgent": "OpenAPI-Generator/36.0.3/python",
+    "objectRef": {
+      "resource": "configmaps",
+      "namespace": "fazerops-capture-0e635e5c",
+      "name": "billing-api-assets",
+      "apiVersion": "v1"
+    },
+    "responseStatus": {
+      "metadata": {},
+      "code": 200
+    },
+    "requestObject": {
+      "binaryData": {
+        "favicon.ico": "AAABACBmYXZpY29uLCBhZnRlcg=="
+      }
+    },
+    "responseObject": {
+      "kind": "ConfigMap",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "billing-api-assets",
+        "namespace": "fazerops-capture-0e635e5c",
+        "uid": "d15529d3-f0fb-4ddd-a904-077d3d7e4344",
+        "resourceVersion": "120074",
+        "creationTimestamp": "2026-09-13T11:59:07Z",
+        "managedFields": [
+          {
+            "manager": "OpenAPI-Generator",
+            "operation": "Update",
+            "apiVersion": "v1",
+            "time": "2026-09-13T11:59:07Z",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": {
+              "f:binaryData": {
+                ".": {},
+                "f:favicon.ico": {}
+              },
+              "f:data": {
+                ".": {},
+                "f:cache.ttl": {}
+              }
+            }
+          }
+        ]
+      },
+      "data": {
+        "cache.ttl": "300"
+      },
+      "binaryData": {
+        "favicon.ico": "AAABACBmYXZpY29uLCBhZnRlcg=="
+      }
+    },
+    "requestReceivedTimestamp": "2026-09-13T11:59:07.734665Z",
+    "stageTimestamp": "2026-09-13T11:59:07.743301Z",
+    "annotations": {
+      "authorization.k8s.io/decision": "allow",
+      "authorization.k8s.io/reason": ""
+    }
+  }
+]
