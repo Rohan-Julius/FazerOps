@@ -113,7 +113,7 @@ async def replay_agents(brief):
     """Run the correlator and the proposer over `brief` from the recorded tapes.
 
     Plan §4 asks W27 to drive the **full pipeline in cassette mode**, and these are the two
-    nodes that call a model. The tapes are recorded from `gemini-3.5-flash-lite` against
+    nodes that call a model. The tapes are recorded from `gemini-3.1-pro-preview` on Vertex AI against
     exactly these poisoned briefs by `scripts/record_injection_cassettes.py`; a changed
     prompt or a changed fixture misses the key rather than replaying an answer to a question
     nobody asked, which is `agents/cassette.py` working as designed.

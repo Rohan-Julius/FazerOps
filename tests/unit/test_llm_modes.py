@@ -123,26 +123,44 @@ def test_the_bedrock_paths_are_still_wired():
     assert model_for("correlator", LlmMode.DEMO) == "amazon.nova-pro-v1:0"
 
 
-def test_gemini_deliberately_drops_the_cheap_expensive_split():
-    """A reversal of §5's split, recorded rather than drifted into.
-
-    The split optimised cost. On Gemini's free tier the binding constraint is **requests
-    per day** — 20 RPD on the stronger models against 500 on the Lites — and twenty does
-    not survive one afternoon of tuning plus Sep 13's rehearsals. Every high-quota model
-    is a Lite, so a split would be §5's appearance without its substance.
-    """
+def test_gemini_restores_the_split_in_sonnets_shape():
+    """§5's split was dropped on 11 Sep for a free-tier quota that Vertex does not have
+    (13 Sep, plan §9.2). Restored in the shape `sonnet` already gives it: the cheap model
+    routes, the stronger one writes and proposes."""
     gemini = MODEL_ASSIGNMENT[LlmMode.GEMINI]
+    sonnet = MODEL_ASSIGNMENT[LlmMode.SONNET]
 
-    assert len(set(gemini.values())) == 1
     assert set(gemini) == set(AGENTS)
+    assert gemini["correlator"] == gemini["proposer"] != gemini["orchestrator"]
+    assert (sonnet["correlator"] == sonnet["proposer"]) and (
+        sonnet["orchestrator"] != sonnet["correlator"]
+    )
 
 
-def test_the_gemini_models_are_the_high_quota_ones():
-    """Regression guard on the reason for the choice. Dropping back to a 20 RPD model
-    would still pass every other test here and then strand the build mid-rehearsal."""
-    twenty_rpd = {"gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3-flash"}
+@pytest.mark.parametrize(
+    ("raw", "vertexai"), [(None, True), ("vertex", True), ("AISTUDIO", False)]
+)
+def test_the_gemini_client_is_pointed_at_the_chosen_backend(monkeypatch, raw, vertexai):
+    """Vertex by default. A Vertex express key is refused by AI Studio and the reverse, so
+    the wrong default is a 403 on every agent — asserted on the constructed client, which
+    builds without touching the network."""
+    from fazerops.agents.correlator import _gemini_model
 
-    assert not set(MODEL_ASSIGNMENT[LlmMode.GEMINI].values()) & twenty_rpd
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-real")
+    if raw is None:
+        monkeypatch.delenv("FAZEROPS_GEMINI_BACKEND", raising=False)
+    else:
+        monkeypatch.setenv("FAZEROPS_GEMINI_BACKEND", raw)
+
+    assert _gemini_model("gemini-3.8-flash").client_args["vertexai"] is vertexai
+
+
+def test_an_unknown_gemini_backend_fails_loudly(monkeypatch):
+    from fazerops.config import ConfigError, gemini_backend
+
+    monkeypatch.setenv("FAZEROPS_GEMINI_BACKEND", "vertx")
+    with pytest.raises(ConfigError, match="FAZEROPS_GEMINI_BACKEND"):
+        gemini_backend()
 
 
 def test_provider_for_refuses_the_offline_modes():

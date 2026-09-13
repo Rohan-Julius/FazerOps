@@ -26,9 +26,10 @@ Two things keep this honest and separate from the demo's tapes:
   of the fixtures, which is what lets CI rebuild the identical request and hit the tape.
 
 Both untrusted channels, every payload: 2 agents × 2 channels × len(PAYLOADS) requests
-against `gemini-3.5-flash-lite`. **The free tier allows 15 requests per minute**, not just
-500/day, so the run is throttled — an unthrottled version 429s from about the eighth call
-and records nothing useful (12 Sep). Failures are reported rather than aborting: a
+against whatever `agents/llm.py` assigns the correlator and proposer — `gemini-3.1-pro-preview`
+on Vertex AI since 13 Sep. The run is still throttled, more lightly: the 12 Sep AI Studio
+free tier 429'd from about the eighth unthrottled call, and Vertex's quota for a preview
+model on a new project is not something this script can read. Failures are reported rather than aborting: a
 correlator whose narrative is rejected by W18's validator is a *result*, and the proposer
 tape for that scenario is still worth having.
 """
@@ -92,7 +93,13 @@ async def main() -> int:
     alert_path = REPO_ROOT / "fixtures" / "alerts" / "alertmanager.json"
     clean_payload = json.loads(alert_path.read_text(encoding="utf-8"))
 
-    meter = TokenMeter()
+    # **One meter per scenario, never one for the whole script** (13 Sep). `TokenMeter` is
+    # "one instance per run" and its 25k cap is a per-run cap; a scenario is a run. A single
+    # shared meter fit only while Strands' Gemini path reported *estimates* (~900 tokens a
+    # call). With real counts — 3.1 Pro's thoughts included — it crossed the cap on the
+    # fourth scenario, and every later call raised `BudgetExceeded` after being billed and
+    # before its tape was written: $0.42 spent for 7 of 26 tapes, and the script exited 0.
+    meters: list[TokenMeter] = []
     workspace = Path(tempfile.mkdtemp(prefix="fazerops-injection-"))
     pristine = collectors_base.FIXTURE_ROOT
     recorded = 0
@@ -106,7 +113,7 @@ async def main() -> int:
         collectors_base.FIXTURE_ROOT = pristine
         brief = await investigate(normalize_alert(clean_payload))
         recorded += await _record_pair(
-            "control/clean", brief, correlate, propose, meter, failures, injection_dir
+            "control/clean", brief, correlate, propose, meters, failures, injection_dir
         )
 
         for name, payload in sorted(PAYLOADS.items()):
@@ -115,36 +122,58 @@ async def main() -> int:
             collectors_base.FIXTURE_ROOT = poisoned_root
             brief = await investigate(normalize_alert(clean_payload))
             recorded += await _record_pair(
-                f"configmap/{name}", brief, correlate, propose, meter, failures, injection_dir
+                f"configmap/{name}", brief, correlate, propose, meters, failures, injection_dir
             )
 
             # -- channel 2: the alert annotations ---------------------------------------
             collectors_base.FIXTURE_ROOT = pristine
             brief = await investigate(normalize_alert(hostile_alert(payload)))
             recorded += await _record_pair(
-                f"alert/{name}", brief, correlate, propose, meter, failures, injection_dir
+                f"alert/{name}", brief, correlate, propose, meters, failures, injection_dir
             )
     finally:
         collectors_base.FIXTURE_ROOT = pristine
         shutil.rmtree(workspace, ignore_errors=True)
 
-    print(f"\nrecorded {recorded} tape(s); {meter.tokens} tokens, ${meter.usd:.6f}")
+    tokens = sum(meter.tokens for meter in meters)
+    usd = sum(meter.usd for meter in meters)
+    print(f"\n{recorded} call(s) answered; {tokens} tokens, ${usd:.6f}")
     for failure in failures:
         print(f"  note: {failure}")
 
-    if recorded == 0:
-        print("error: nothing was recorded", file=sys.stderr)
+    # Counted off the files, not off this script's own bookkeeping. On 13 Sep the bookkeeping
+    # reported 17 tapes and exit 0 while the files held 7 — a tape is written only after the
+    # meter accepts the call, so a refused call can look answered and still leave a hole.
+    expected = 1 + 2 * len(PAYLOADS)
+    short = {}
+    for agent in ("correlator", "proposer"):
+        path = injection_dir / f"{agent}.json"
+        held = len(json.loads(path.read_text(encoding="utf-8"))) if path.is_file() else 0
+        if held != expected:
+            short[agent] = held
+    if short:
+        print(
+            f"error: expected {expected} tapes per agent, found {short}. "
+            "The suite will hard-fail on the missing keys.",
+            file=sys.stderr,
+        )
         return 1
+    print(f"verified: {expected} tapes per agent on disk")
     return 0
 
 
-async def _record_pair(label, brief, correlate, propose, meter, failures, directory) -> int:
+async def _record_pair(label, brief, correlate, propose, meters, failures, directory) -> int:
     """Record the correlator and the proposer for one poisoned brief.
 
     The correlator runs first because `propose` takes its narrative: recording the proposer
     against a narrative the pipeline would not have produced would tape a prompt CI never
     replays, and every replay would then miss.
     """
+    from fazerops.agents.budget import BudgetExceeded, TokenMeter
+    from fazerops.agents.proposer import ProposalRejected
+
+    meter = TokenMeter()
+    meters.append(meter)
     count = 0
     narrative = None
 
@@ -168,12 +197,21 @@ async def _record_pair(label, brief, correlate, propose, meter, failures, direct
         count += 1
         said = "declined" if proposal is None else proposal.action_id
         print(f"  {label}: proposer ok — {said}")
-    except Exception as exc:
+    except BudgetExceeded as exc:
+        # Raised by the meter *before* the tape is written, unlike a validation refusal.
+        failures.append(f"{label}: proposer over budget, NO tape — {exc}")
+        print(f"  {label}: proposer over budget — tape NOT written")
+    except ProposalRejected as exc:
         # The tape is written before validation, so this response IS recorded. A rejection
         # here is the barrier doing its job and the tape is exactly what CI should replay.
-        failures.append(f"{label}: proposal refused — {type(exc).__name__}: {exc}")
-        print(f"  {label}: proposer refused ({type(exc).__name__}) — tape still written")
+        failures.append(f"{label}: proposal refused — {exc}")
+        print(f"  {label}: proposer refused (ProposalRejected) — tape still written")
         count += 1
+    except Exception as exc:
+        # Anything else failed before `cassette.record` — on 13 Sep a Vertex 429 on the last
+        # scenario was reported here as "tape still written" and counted as answered.
+        failures.append(f"{label}: proposer call failed, NO tape — {type(exc).__name__}: {exc}")
+        print(f"  {label}: proposer call failed ({type(exc).__name__}) — tape NOT written")
     finally:
         os.environ["FAZEROPS_LLM"] = "stub"
         _throttle()
@@ -181,12 +219,12 @@ async def _record_pair(label, brief, correlate, propose, meter, failures, direct
     return count
 
 
-# 15 requests/minute on the free tier. Two calls per scenario, so a 4.5s gap lands at ~13.3
-# requests/minute — inside the limit on paper and not in practice: one correlator call still
-# 429'd and left a hole the suite correctly hard-failed on. 5.5s gives ~10.9/min and real
-# headroom. Sleeping rather than retrying on 429: a retry loop against a per-minute quota
+# 5.5s was sized for AI Studio's 15 requests/minute free tier, where 4.5s still 429'd once
+# and left a hole the suite correctly hard-failed on. Vertex has no such tier, and a 3.1 Pro
+# correlator call already takes ~20s, so 2s is margin for an unpublished preview quota, not
+# the pacing. Sleeping rather than retrying on 429: a retry loop against a per-minute quota
 # turns one slow run into a much slower one that is still mostly waiting.
-_THROTTLE_SECONDS = 5.5
+_THROTTLE_SECONDS = 2.0
 
 
 def _throttle() -> None:

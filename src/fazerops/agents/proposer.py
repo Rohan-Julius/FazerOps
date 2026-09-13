@@ -364,7 +364,11 @@ async def propose(
         if mode is LlmMode.CASSETTE
         else model_for("proposer", mode)
     )
-    key = request_key("proposer", model, messages, system=SYSTEM_PROMPT)
+    from .correlator import generation_params_for
+
+    key = request_key(
+        "proposer", model, messages, system=SYSTEM_PROMPT, **generation_params_for(mode)
+    )
     cassette = Cassette("proposer", directory=cassette_directory)
 
     if mode is LlmMode.CASSETTE:

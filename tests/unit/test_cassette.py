@@ -229,5 +229,19 @@ def test_every_agent_passes_its_system_prompt_to_request_key():
                 f"{source_file.name}:{node.lineno} keys a cassette request without its "
                 "system prompt; a prompt edit would replay the old tape in silence"
             )
+            # The same gap one field over, closed 13 Sep. `**params` was always accepted and
+            # never passed, so moving 3.1 Pro's thinking from `high` to `low` would have
+            # replayed `high` tapes without a miss. `kw.arg is None` is a `**mapping`.
+            splats = [kw.value for kw in node.keywords if kw.arg is None]
+            assert any(
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id == "generation_params_for"
+                for value in splats
+            ), (
+                f"{source_file.name}:{node.lineno} keys a cassette request without its "
+                "generation parameters; a thinking-level or temperature change would "
+                "replay the old tape in silence"
+            )
 
     assert calls >= 3, f"expected a request_key call per agent, found {calls}"

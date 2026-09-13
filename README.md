@@ -41,6 +41,32 @@ Secrets, which is what makes the demo's before/after diff a real object body rat
 an assertion. The fixtures under `fixtures/k8s_audit/` are recordings from this cluster,
 not hand-authored payloads — `scripts/capture_audit_fixture.py` regenerates them.
 
+### Running the agents against a live model
+
+The quickstart, the test suite and cassette replay need **no model key**. A key matters only
+for `FAZEROPS_LLM=gemini`, which calls a real model. Copy `.env.example` to `.env`, then:
+
+| Variable | What to set |
+|---|---|
+| `GEMINI_API_KEY` | A Vertex AI express key or an AI Studio key |
+| `FAZEROPS_GEMINI_BACKEND` | `vertex` (default) or `aistudio` — it must match the key |
+| `FAZEROPS_GEMINI_MODEL_ORCHESTRATOR` / `_CORRELATOR` / `_PROPOSER` | Optional. Models your key can reach; empty uses the defaults (`gemini-3.8-flash`, `gemini-3.1-pro-preview`) |
+| `FAZEROPS_GEMINI_THINKING` | Optional. `off`, `minimal`, `low` (default), `medium` or `high`; use `off` for models older than Gemini 3 |
+
+```bash
+uv sync --extra gemini
+set -a && . ./.env && set +a         # nothing under src/ reads .env; export it first
+FAZEROPS_LLM=gemini ./scripts/run_demo.sh
+```
+
+That demo run calls **only the orchestrator** live, to choose scope and window. The brief it
+prints is ranked in Python either way (ground rule #3); the correlator and proposer are not
+part of `run_demo.sh`.
+
+A live run costs money on a paid key. The model and thinking overrides apply to live runs
+only: cassette replay always uses the committed defaults, and the recording scripts refuse
+to run with different ones.
+
 ## Stated limitations
 
 Named here rather than half-built. Each is a deliberate boundary, and none of them is

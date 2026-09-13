@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from ..config import LlmMode, llm_mode
+from ..config import GEMINI_MODEL_ENV, ConfigError, LlmMode, gemini_model_overrides, llm_mode
 
 __all__ = [
     "AGENTS",
@@ -52,19 +52,19 @@ NOVA_PRO = "amazon.nova-pro-v1:0"
 HAIKU = "anthropic.claude-haiku-4-5-20251001-v1:0"
 SONNET = "anthropic.claude-sonnet-4-5-20250929-v1:0"
 
-# **Gemini does NOT inherit the cheap/expensive split, and that is a deliberate reversal**
-# (11 Sep, plan §9.2). §5 gave the correlator the better model because its narrative is on
-# camera and the other two only fill a schema from an enum. That split optimised *cost*.
+# **The split is back, because the reason it was dropped is gone** (13 Sep, plan §9.2).
+# On 11 Sep all three agents ran one Lite: the AI Studio free tier capped every stronger
+# model at 20 requests/day, and quota rather than cost was the scarce resource. Gemini is
+# now served from Vertex AI against GCP credits, where the binding constraint is cost again
+# — so §5's reasoning applies as written, in the shape `sonnet` already gives it.
 #
-# On the Gemini free tier the binding constraint is not cost, it is **requests per day**:
-# 2.5 Flash / 2.5 Flash Lite / 3 Flash allow 20 RPD, while 3.1 and 3.5 Flash Lite allow
-# 500. Twenty requests does not survive one afternoon of prompt tuning, let alone the
-# rehearsals and video takes on Sep 13. Every model with real headroom is a Lite, so the
-# split cannot be preserved as written — and a nominal split between two Lites would be
-# the appearance of §5's reasoning without its substance.
-#
-# One model, the newest with 500 RPD. Quota is the scarce resource here, not dollars.
-GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
+# The proposer takes the stronger model with the correlator, not the cheap one with the
+# orchestrator. It reads the same attacker-influenceable diff W27 poisons; W22's validator
+# holds whatever it says, but a model steered off "none" costs the brief its proposal.
+# The orchestrator only routes three manifest-bounded tools, where Pro adds latency per turn
+# and nothing a judge can see.
+GEMINI_PRO = "gemini-3.1-pro-preview"
+GEMINI_FLASH = "gemini-3.8-flash"
 
 PROVIDER: dict[LlmMode, Provider] = {
     LlmMode.NOVA: Provider.BEDROCK,
@@ -91,8 +91,12 @@ MODEL_ASSIGNMENT: dict[LlmMode, dict[str, str]] = {
         "correlator": SONNET,
         "proposer": SONNET,
     },
-    # The active path (plan §9.2). Same split as `demo`, different provider.
-    LlmMode.GEMINI: dict.fromkeys(AGENTS, GEMINI_FLASH_LITE),
+    # The active path (plan §9.2). Same split as `sonnet`, different provider.
+    LlmMode.GEMINI: {
+        "orchestrator": GEMINI_FLASH,
+        "correlator": GEMINI_PRO,
+        "proposer": GEMINI_PRO,
+    },
 }
 
 # `record` records against whichever path is active, and cassettes must hold what the demo
@@ -122,7 +126,24 @@ def model_for(agent: str, mode: LlmMode | None = None) -> str:
             f"FAZEROPS_LLM={mode.value} does not call a model, so it has no model id. "
             "Check `requires_network()` before asking for one."
         )
-    return MODEL_ASSIGNMENT[mode][agent]
+    default = MODEL_ASSIGNMENT[mode][agent]
+
+    # `FAZEROPS_GEMINI_MODEL_*` reach **live** Gemini runs and nothing else. Cassette replay
+    # never gets here (`recording_model_for` reads the table), which is what keeps a clone
+    # with its own `.env` green in CI.
+    if mode is LlmMode.GEMINI:
+        return gemini_model_overrides().get(agent, default)
+    if mode is LlmMode.RECORD and PROVIDER[mode] is Provider.GEMINI:
+        chosen = gemini_model_overrides().get(agent, default)
+        if chosen != default:
+            # A tape keyed on a model the table does not name is one replay can never find:
+            # recording succeeds, the file looks right, and every clone's CI misses.
+            raise ConfigError(
+                f"{GEMINI_MODEL_ENV[agent]}={chosen!r} differs from the committed "
+                f"{default!r}. Cassettes must be recorded with the models `agents/llm.py` "
+                "assigns — unset it to record, or change the table and re-record everything."
+            )
+    return default
 
 
 def provider_for(mode: LlmMode | None = None) -> Provider:
@@ -136,6 +157,15 @@ def provider_for(mode: LlmMode | None = None) -> Provider:
 def requires_network(mode: LlmMode | None = None) -> bool:
     mode = mode if mode is not None else llm_mode()
     return mode in MODEL_ASSIGNMENT
+
+
+def recording_provider_for() -> Provider:
+    """The provider whose responses the cassettes hold — `recording_model_for`'s twin, for
+    the same reason: replay must rebuild the key record wrote, and that key now carries the
+    provider's generation parameters."""
+    from ..config import LlmMode
+
+    return PROVIDER[LlmMode.RECORD]
 
 
 def recording_model_for(agent: str) -> str:

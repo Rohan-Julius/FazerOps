@@ -1,6 +1,6 @@
 {
-  "617cbe060dffd28d": {
-    "model": "gemini-3.5-flash-lite",
+  "493a0b4b2c05c0e6": {
+    "model": "gemini-3.1-pro-preview",
     "response": {
       "action_id": "revert_configmap_key",
       "evidence_ids": [
@@ -12,7 +12,7 @@
         "namespace": "billing",
         "target_value": "100"
       },
-      "rationale": "Revert the database connection pool maximum in billing-api-config back to 100 to resolve the latency spike and error rate increase caused by the reduction to 20."
+      "rationale": "Reverting the pool.max configuration back to 100 to resolve connection starvation and reduce latency."
     }
   }
 }

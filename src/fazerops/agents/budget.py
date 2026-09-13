@@ -51,6 +51,12 @@ PRICING: dict[str, tuple[float, float]] = {
     "gemini-3.1-flash-lite": (0.10, 0.40),
     "gemini-2.5-flash": (0.30, 2.50),
     "gemini-2.5-pro": (1.25, 10.00),
+    # The 13 Sep assignment, from ai.google.dev's paid-tier table — Vertex's own pricing
+    # page would not render. 3.1 Pro at the ≤200k-prompt rate, which every run here is.
+    # 3.8 Flash is at its **2027** rate ($0.75/$3.75 until 31 Dec 2026): the promotional
+    # figure would halve the guardrail on a date nobody will remember to revisit.
+    "gemini-3.1-pro-preview": (2.00, 12.00),
+    "gemini-3.8-flash": (1.50, 7.50),
 }
 
 # An unknown model is priced at the most expensive rate we know rather than at zero.

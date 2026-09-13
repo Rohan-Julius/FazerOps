@@ -315,7 +315,9 @@ async def correlate(
         if mode is LlmMode.CASSETTE
         else model_for("correlator", mode)
     )
-    key = request_key("correlator", model, messages, system=SYSTEM_PROMPT)
+    key = request_key(
+        "correlator", model, messages, system=SYSTEM_PROMPT, **generation_params_for(mode)
+    )
     cassette = Cassette("correlator", directory=cassette_directory)
 
     if mode is LlmMode.CASSETTE:
@@ -373,24 +375,83 @@ async def _invoke(provider, model: str, messages: list[dict[str, Any]]) -> tuple
     return output.model_dump(), usage or _estimated_usage(messages, output)
 
 
+BEDROCK_PARAMS: dict[str, Any] = {"temperature": 0.0, "max_tokens": 1200}
+
+GEMINI_PARAMS: dict[str, Any] = {
+    "temperature": 0.0,
+    # **Thoughts count against this cap.** 1200 held for a Lite that does not think; on
+    # 3.1 Pro at its default level the same prompt spent 604, 1150 and 2449 tokens thinking
+    # across three runs, and the 1150 run stopped at MAX_TOKENS with a 36-token half-answer.
+    # The answer itself is ~400 tokens, so this bounds a runaway, not the response.
+    "max_output_tokens": 8192,
+    # `low`, not Pro's default `high` (13 Sep, the user's call). Thinking is the bulk of a
+    # ~20s correlator call: ~2,450 thought tokens against a ~290-token answer. One probe at
+    # `low` thought for 309 and still produced a valid, schema-conforming narrative. The
+    # work that needs reasoning — ranking — is deterministic Python (ground rule #3); the
+    # model is explaining a ranking it was handed, not deriving one.
+    "thinking_config": {"thinking_level": "low"},
+}
+
+
+def generation_params_for(mode: Any) -> dict[str, Any]:
+    """The generation parameters a live call under `mode` sends — and so part of its
+    cassette key.
+
+    **The key omitted these until 13 Sep**, the same class of gap as the system prompt on
+    12 Sep: `request_key` has always accepted `**params` and no agent passed any, so moving
+    3.1 Pro's thinking from `high` to `low` would have replayed `high`-thinking tapes
+    without a single miss. Replay asks for the *recording* provider's parameters, as it
+    asks for the recording model.
+    """
+    from ..config import (
+        OFFLINE_LLM_MODES,
+        ConfigError,
+        GeminiThinking,
+        LlmMode,
+        gemini_thinking,
+    )
+    from .llm import Provider, provider_for, recording_provider_for
+
+    offline = mode in OFFLINE_LLM_MODES
+    provider = recording_provider_for() if offline else provider_for(mode)
+    if provider is not Provider.GEMINI:
+        return dict(BEDROCK_PARAMS)
+
+    params = dict(GEMINI_PARAMS)
+    thinking = None if offline else gemini_thinking()
+    if thinking is None:
+        return params
+
+    default = GEMINI_PARAMS["thinking_config"]["thinking_level"]
+    if mode is LlmMode.RECORD and thinking.value != default:
+        # Same reason as `model_for`'s refusal: replay rebuilds the key from these defaults.
+        raise ConfigError(
+            f"FAZEROPS_GEMINI_THINKING={thinking.value!r} differs from the committed "
+            f"{default!r}; cassettes must be recorded with the defaults."
+        )
+    if thinking is GeminiThinking.OFF:
+        params.pop("thinking_config")
+    else:
+        params["thinking_config"] = {"thinking_level": thinking.value}
+    return params
+
+
 def _bedrock_model(model: str):
     """Kept wired through the Gemini deviation (plan §9.2). This is the spec path, and
     deleting it would make the reversal a rewrite instead of an env var."""
     from strands.models import BedrockModel
 
-    return BedrockModel(
-        model_id=model,
-        region_name="us-east-1",
-        temperature=0.0,
-        max_tokens=1200,
-    )
+    return BedrockModel(model_id=model, region_name="us-east-1", **BEDROCK_PARAMS)
 
 
 def _gemini_model(model: str):
-    """The active path (plan §9.2)."""
+    """The active path (plan §9.2), served from Vertex AI unless `FAZEROPS_GEMINI_BACKEND`
+    says otherwise."""
     import os
 
     from strands.models.gemini import GeminiModel
+
+    from ..config import GeminiBackend, gemini_backend, llm_mode
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -399,10 +460,57 @@ def _gemini_model(model: str):
             "committed — tests/test_no_secrets.py matches the AIza… shape."
         )
 
-    return GeminiModel(
+    class MeteredGeminiModel(GeminiModel):
+        """Strands' `structured_output`, keeping the two things it throws away (13 Sep).
+
+        Upstream validates `response.parsed` and discards the response. That dropped:
+
+        1. **Usage.** `_estimated_usage` measures the answer's text, but a thinking model
+           is billed for its thoughts too — 2,449 thought tokens against a 291-token answer
+           on `gemini-3.1-pro-preview`. An estimate that blind reads as a guarantee, which
+           is worse than no meter. Thoughts are counted as output because that is how they
+           are billed.
+        2. **Truncation.** A response cut off at `max_output_tokens` has `parsed=None`, and
+           upstream turns that into a Pydantic error about `NoneType`. Yielding no output
+           lets the caller's own "returned no structured output" path say what happened.
+        """
+
+        async def structured_output(self, output_model, prompt, system_prompt=None, **kwargs):
+            params = {
+                **(self.config.get("params") or {}),
+                "response_mime_type": "application/json",
+                "response_schema": output_model.model_json_schema(),
+            }
+            request = self._format_request(prompt, None, system_prompt, params)
+            # Bound to a local on purpose. Chained inline, the `genai.Client` is collectable
+            # before the await resumes, its finaliser closes the aiohttp session, and the
+            # call dies inside aiohttp on `assert self._connector is not None`.
+            client = self._get_client()
+            response = await client.aio.models.generate_content(**request)
+
+            usage = response.usage_metadata
+            if usage is not None:
+                yield {
+                    "metadata": {
+                        "usage": {
+                            "inputTokens": usage.prompt_token_count or 0,
+                            "outputTokens": (usage.candidates_token_count or 0)
+                            + (usage.thoughts_token_count or 0),
+                        }
+                    }
+                }
+            if response.parsed is not None:
+                yield {"output": output_model.model_validate(response.parsed)}
+
+    return MeteredGeminiModel(
         model_id=model,
-        client_args={"api_key": api_key},
-        params={"temperature": 0.0, "max_output_tokens": 1200},
+        # Passed explicitly rather than left to the SDK's own `GOOGLE_GENAI_USE_VERTEXAI`
+        # lookup: an endpoint chosen by an env var this repo never names is a demo-day
+        # surprise waiting in someone's shell profile.
+        client_args={"api_key": api_key, "vertexai": gemini_backend() is GeminiBackend.VERTEX},
+        # The same function the cassette key reads, so the parameters sent and the
+        # parameters keyed cannot drift apart.
+        params=generation_params_for(llm_mode()),
     )
 
 

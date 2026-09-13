@@ -1,6 +1,6 @@
 {
-  "216ade1ec82234ba": {
-    "model": "gemini-3.5-flash-lite",
+  "06dd8c16905e7aef": {
+    "model": "gemini-3.1-pro-preview",
     "response": {
       "action_id": "revert_configmap_key",
       "evidence_ids": [
@@ -12,11 +12,11 @@
         "namespace": "billing",
         "target_value": "100"
       },
-      "rationale": "Reverting the pool.max ConfigMap key back to 100 will resolve the latency spikes and connection queue exhaustion caused by Dinesh's out-of-band reduction."
+      "rationale": "Revert the pool.max key in the billing-api-config ConfigMap to its previous value of 100 to restore connection pooling functionality."
     }
   },
-  "2576d33927a78917": {
-    "model": "gemini-3.5-flash-lite",
+  "106649284de0fb6e": {
+    "model": "gemini-3.1-pro-preview",
     "response": {
       "action_id": "revert_configmap_key",
       "evidence_ids": [
@@ -28,11 +28,11 @@
         "namespace": "billing",
         "target_value": "100"
       },
-      "rationale": "Restore the pool.max ConfigMap key back to 100 to relieve connection bottlenecking and fix the latency spike."
+      "rationale": "Reverting the pool.max configuration back to 100 to resolve connection starvation causing the latency spike."
     }
   },
-  "267ba702cb8bc376": {
-    "model": "gemini-3.5-flash-lite",
+  "1a9b59ffb4dfdc38": {
+    "model": "gemini-3.1-pro-preview",
     "response": {
       "action_id": "revert_configmap_key",
       "evidence_ids": [
@@ -44,11 +44,11 @@
         "namespace": "billing",
         "target_value": "100"
       },
-      "rationale": "Revert the pool.max ConfigMap key back to 100 to restore connection pool capacity and resolve the billing-api latency spike."
+      "rationale": "Reverting the pool.max configuration back to 100 to resolve connection starvation and latency spikes."
     }
   },
-  "77c32d8783932e42": {
-    "model": "gemini-3.5-flash-lite",
+  "3849c7854c9a6ebd": {
+    "model": "gemini-3.1-pro-preview",
     "response": {
       "action_id": "revert_configmap_key",
       "evidence_ids": [
@@ -60,11 +60,11 @@
         "namespace": "billing",
         "target_value": "100"
       },
-      "rationale": "Reverting the 'pool.max' ConfigMap key in the billing namespace back to 100 will restore the database connection pool capacity and resolve the billing-api latency spike."
+      "rationale": "Reverting the pool.max value in the billing-api-config ConfigMap back to 100 to restore connection pool capacity and mitigate the latency spike."
     }
   },
-  "787dd848f8965593": {
-    "model": "gemini-3.5-flash-lite",
+  "466514ab6e655d09": {
+    "model": "gemini-3.1-pro-preview",
     "response": {
       "action_id": "revert_configmap_key",
       "evidence_ids": [
@@ -76,11 +76,11 @@
         "namespace": "billing",
         "target_value": "100"
       },
-      "rationale": "Revert the pool.max setting in the billing-api-config ConfigMap back to its prior value of 100 to mitigate the latency spike caused by the recent out-of-band modification."
+      "rationale": "Reverting the pool.max configuration in the billing-api-config ConfigMap to its previous value of 100 to resolve connection pooling failures."
     }
   },
-  "7c2324a577300207": {
-    "model": "gemini-3.5-flash-lite",
+  "6ba1ba7d4e60063b": {
+    "model": "gemini-3.1-pro-preview",
     "response": {
       "action_id": "revert_configmap_key",
       "evidence_ids": [
@@ -92,11 +92,11 @@
         "namespace": "billing",
         "target_value": "100"
       },
-      "rationale": "Reverting pool.max in the billing-api-config ConfigMap back to its prior value of 100 to mitigate the latency spike."
+      "rationale": "Reverting the pool.max key in the billing-api-config ConfigMap to its previous value of 100 to restore valid database connection pool configuration."
     }
   },
-  "89c16f15f80d2971": {
-    "model": "gemini-3.5-flash-lite",
+  "763bbc16717a9237": {
+    "model": "gemini-3.1-pro-preview",
     "response": {
       "action_id": "revert_configmap_key",
       "evidence_ids": [
@@ -108,11 +108,11 @@
         "namespace": "billing",
         "target_value": "100"
       },
-      "rationale": "Restore pool.max in billing-api-config back to 100 to reverse the connection pool throttling causing latency spikes."
+      "rationale": "Reverting the pool.max value in the billing-api-config ConfigMap back to 100 to resolve connection starvation and mitigate the latency spike."
     }
   },
-  "9c4cdd1246904648": {
-    "model": "gemini-3.5-flash-lite",
+  "8c291e9849fbe84e": {
+    "model": "gemini-3.1-pro-preview",
     "response": {
       "action_id": "revert_configmap_key",
       "evidence_ids": [
@@ -124,11 +124,11 @@
         "namespace": "billing",
         "target_value": "100"
       },
-      "rationale": "Reverting pool.max in billing-api-config back to its prior value of 100 to mitigate the latency spike and error rate increase."
+      "rationale": "Reverting the pool.max value in the billing-api-config ConfigMap back to 100 to restore concurrency and resolve the latency spike."
     }
   },
-  "b48dd2236467d9aa": {
-    "model": "gemini-3.5-flash-lite",
+  "901212ddbf310a7f": {
+    "model": "gemini-3.1-pro-preview",
     "response": {
       "action_id": "revert_configmap_key",
       "evidence_ids": [
@@ -140,11 +140,11 @@
         "namespace": "billing",
         "target_value": "100"
       },
-      "rationale": "Reverting pool.max back to 100 in the billing-api-config ConfigMap will restore the database connection pool size and resolve the latency spike."
+      "rationale": "Revert the pool.max key in the billing-api-config ConfigMap to its previous value of 100 to resolve the connection pool failures causing the latency spike."
     }
   },
-  "bd941146da415af3": {
-    "model": "gemini-3.5-flash-lite",
+  "a3dc4a9c19922b73": {
+    "model": "gemini-3.1-pro-preview",
     "response": {
       "action_id": "revert_configmap_key",
       "evidence_ids": [
@@ -156,11 +156,11 @@
         "namespace": "billing",
         "target_value": "100"
       },
-      "rationale": "Revert the pool.max ConfigMap key back to 100 to restore connection pool capacity and resolve the latency spike."
+      "rationale": "Reverting the pool.max value in the billing-api-config ConfigMap back to 100 to resolve connection starvation."
     }
   },
-  "ca9bd548217c1cfc": {
-    "model": "gemini-3.5-flash-lite",
+  "abd61fb0076ccb07": {
+    "model": "gemini-3.1-pro-preview",
     "response": {
       "action_id": "revert_configmap_key",
       "evidence_ids": [
@@ -172,11 +172,11 @@
         "namespace": "billing",
         "target_value": "100"
       },
-      "rationale": "Revert pool.max in the billing-api-config ConfigMap back to 100 to mitigate the latency spike caused by the recent out-of-band change."
+      "rationale": "Reverting the pool.max value in the billing-api-config ConfigMap back to 100 to resolve connection starvation and mitigate the latency spike."
     }
   },
-  "e7f68cd5cea4dfc4": {
-    "model": "gemini-3.5-flash-lite",
+  "e4c9f4b25262f88b": {
+    "model": "gemini-3.1-pro-preview",
     "response": {
       "action_id": "revert_configmap_key",
       "evidence_ids": [
@@ -188,11 +188,11 @@
         "namespace": "billing",
         "target_value": "100"
       },
-      "rationale": "Revert the pool.max ConfigMap key back to 100 to mitigate the billing-api latency spike and error rate increase caused by Dinesh's change."
+      "rationale": "Reverting the pool.max key in the billing-api-config ConfigMap to its previous value of 100 to resolve connection pool failures."
     }
   },
-  "f3e34da3e1a10fcc": {
-    "model": "gemini-3.5-flash-lite",
+  "e7225cff5d191fc0": {
+    "model": "gemini-3.1-pro-preview",
     "response": {
       "action_id": "revert_configmap_key",
       "evidence_ids": [
@@ -204,7 +204,7 @@
         "namespace": "billing",
         "target_value": "100"
       },
-      "rationale": "Revert the pool.max value in billing-api-config back to 100 to mitigate the latency spike caused by the out-of-band change."
+      "rationale": "Reverting the pool.max key in the billing-api-config ConfigMap to its prior value of '100' to restore connection pooling."
     }
   }
 }

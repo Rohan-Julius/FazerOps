@@ -158,7 +158,7 @@ async def test_a_fabricated_evidence_id_from_the_injection_is_refused():
 # The full pipeline in cassette mode — plan §4's literal requirement
 # --------------------------------------------------------------------------------------
 #
-# Recorded from `gemini-3.5-flash-lite` against these exact poisoned alerts by
+# Recorded from `gemini-3.1-pro-preview` on Vertex AI against these exact poisoned alerts by
 # `scripts/record_injection_cassettes.py`. Never hand-authored — `tests/cassettes/README.md`
 # carries the obligation, and W10a is why it matters.
 

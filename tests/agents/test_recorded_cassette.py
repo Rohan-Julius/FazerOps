@@ -132,7 +132,8 @@ def test_the_orchestrator_cassette_replays_without_degrading(alert, monkeypatch)
     not ORCHESTRATOR_CASSETTE.is_file(), reason="no orchestrator cassette recorded yet"
 )
 def test_the_real_model_chose_the_demos_scope(alert, monkeypatch):
-    """What a live `gemini-3.5-flash-lite` actually decided for the demo alert, on 12 Sep.
+    """What a live `gemini-3.8-flash` actually decided for the demo alert, on 13 Sep —
+    the same scope `gemini-3.5-flash-lite` chose on 12 Sep.
 
     Not a restatement of the fallback: the fallback resolves `alert.service`, and this
     asserts the *model* reached the same answer through three manifest-bounded tool calls.

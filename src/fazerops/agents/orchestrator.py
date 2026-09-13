@@ -296,9 +296,16 @@ def _replay(session: OrchestrationSession, *, hours: int = DEFAULT_WINDOW_HOURS)
 
     from .cassette import CassetteMiss
 
+    from ..config import LlmMode
+    from .correlator import generation_params_for
+
     model = recording_model_for("orchestrator")
     key = request_key(
-        "orchestrator", model, _decision_messages(session.alert), system=SYSTEM_PROMPT
+        "orchestrator",
+        model,
+        _decision_messages(session.alert),
+        system=SYSTEM_PROMPT,
+        **generation_params_for(LlmMode.CASSETTE),
     )
     try:
         recorded = Cassette("orchestrator").replay(key)
@@ -426,11 +433,17 @@ def _record(session: OrchestrationSession, plan: Plan, model_id: str) -> None:
     contributes is these two values, and everything downstream of them is deterministic
     Python that replays exactly by being re-run. `_replay` reads precisely this shape.
     """
+    from ..config import LlmMode
     from .cassette import Cassette, request_key
+    from .correlator import generation_params_for
     from .prompts.orchestrator import SYSTEM_PROMPT
 
     key = request_key(
-        "orchestrator", model_id, _decision_messages(session.alert), system=SYSTEM_PROMPT
+        "orchestrator",
+        model_id,
+        _decision_messages(session.alert),
+        system=SYSTEM_PROMPT,
+        **generation_params_for(LlmMode.RECORD),
     )
     Cassette("orchestrator").record(
         key,

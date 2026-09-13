@@ -252,7 +252,7 @@ async def test_the_payload_never_becomes_a_subprocess_argument(poisoned_brief, m
 # Everything above assumes the model is compromised and asserts the barriers hold. This
 # section asserts something different and complementary: what a **real model actually did**
 # when it was handed the poisoned brief. The tapes are recorded from
-# `gemini-3.5-flash-lite` by `scripts/record_injection_cassettes.py` — never hand-authored,
+# `gemini-3.1-pro-preview` on Vertex AI by `scripts/record_injection_cassettes.py` — never hand-authored,
 # per `tests/cassettes/README.md`.
 
 

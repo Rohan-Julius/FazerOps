@@ -10,9 +10,9 @@ actually said — `tests/cassettes/README.md` states the obligation and W10a exp
 matters: recording real CloudTrail is what revealed that Lambda versions its event names,
 which a hand-written fixture would have passed while dropping every Lambda change.
 
-Costs a small number of requests against the Gemini free tier. The active model is chosen
-for its 500 requests/day quota (see `agents/llm.py`), so this is cheap — but it is not
-free, and the script records the minimum set rather than looping.
+Costs real money against GCP credits: Vertex AI bills per token, and 3.1 Pro bills its
+thinking as output. About $0.06 a run on 13 Sep (see `.fazerops/token_ledger.jsonl`), which
+is why the script records the minimum set rather than looping.
 """
 
 from __future__ import annotations

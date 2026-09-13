@@ -49,7 +49,38 @@ class LlmMode(str, Enum):
     destination, and §9.2 names the reversal."""
 
 
+class GeminiBackend(str, Enum):
+    """Which Google endpoint serves `FAZEROPS_LLM=gemini`. Same models, same key variable,
+    different client flag — so the choice is a switch, not a code path."""
+
+    VERTEX = "vertex"
+    """**The default from 13 Sep** (plan §9.2). Vertex AI express mode, billed against GCP
+    credits. The AI Studio free tier capped the stronger models at 20 requests/day, which
+    is what had forced all three agents onto one Lite."""
+
+    AISTUDIO = "aistudio"
+    """The 11 Sep path. A Vertex express key is refused here, and vice versa."""
+
+
+class GeminiThinking(str, Enum):
+    """`FAZEROPS_GEMINI_THINKING`. Gemini 3 models take a `thinking_level`; older ones
+    reject the field, so `off` omits it rather than sending a level they cannot parse."""
+
+    OFF = "off"
+    MINIMAL = "minimal"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 OFFLINE_LLM_MODES = frozenset({LlmMode.STUB, LlmMode.CASSETTE})
+
+# One variable per agent rather than one for all three: the split in `agents/llm.py` is
+# deliberate, and a single override would quietly collapse it.
+GEMINI_MODEL_ENV = {
+    agent: f"FAZEROPS_GEMINI_MODEL_{agent.upper()}"
+    for agent in ("orchestrator", "correlator", "proposer")
+}
 
 
 class ConfigError(ValueError):
@@ -74,6 +105,32 @@ def mode() -> Mode:
 
 def llm_mode() -> LlmMode:
     return _read("FAZEROPS_LLM", LlmMode, LlmMode.STUB)
+
+
+def gemini_backend() -> GeminiBackend:
+    return _read("FAZEROPS_GEMINI_BACKEND", GeminiBackend, GeminiBackend.VERTEX)
+
+
+def gemini_model_overrides() -> dict[str, str]:
+    """Agents whose Gemini model is set in the environment, for someone whose key reaches a
+    different set of models — an AI Studio free-tier key may not reach Pro at all.
+
+    **Free text, not an enum.** Which models a key can call changes by account, tier and
+    month; a list here would reject the one model a user's key actually serves.
+    """
+    overrides = {}
+    for agent, name in GEMINI_MODEL_ENV.items():
+        raw = os.environ.get(name, "").strip()
+        if raw:
+            overrides[agent] = raw
+    return overrides
+
+
+def gemini_thinking() -> GeminiThinking | None:
+    """The thinking level set in the environment, or `None` to keep the default."""
+    if not os.environ.get("FAZEROPS_GEMINI_THINKING", "").strip():
+        return None
+    return _read("FAZEROPS_GEMINI_THINKING", GeminiThinking, GeminiThinking.LOW)
 
 
 def is_offline() -> bool:

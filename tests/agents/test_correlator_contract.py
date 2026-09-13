@@ -376,7 +376,16 @@ def recorded(tmp_path, monkeypatch):
         model = recording_model_for("correlator")
         from fazerops.agents.prompts.correlator import SYSTEM_PROMPT
 
-        key = request_key("correlator", model, build_messages(brief), system=SYSTEM_PROMPT)
+        from fazerops.agents.correlator import generation_params_for
+        from fazerops.config import LlmMode
+
+        key = request_key(
+            "correlator",
+            model,
+            build_messages(brief),
+            system=SYSTEM_PROMPT,
+            **generation_params_for(LlmMode.CASSETTE),
+        )
         Cassette("correlator", directory=tmp_path).record(key, payload, model=model)
         return tmp_path
 
