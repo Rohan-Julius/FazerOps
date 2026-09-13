@@ -374,7 +374,9 @@ def recorded(tmp_path, monkeypatch):
 
     def _record(payload, brief):
         model = recording_model_for("correlator")
-        key = request_key("correlator", model, build_messages(brief))
+        from fazerops.agents.prompts.correlator import SYSTEM_PROMPT
+
+        key = request_key("correlator", model, build_messages(brief), system=SYSTEM_PROMPT)
         Cassette("correlator", directory=tmp_path).record(key, payload, model=model)
         return tmp_path
 

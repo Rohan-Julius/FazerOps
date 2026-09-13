@@ -94,20 +94,78 @@ class ProposerOutput(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
 
 
+def _wire_params_model() -> type[BaseModel]:
+    """Build the provider-facing params schema from the catalog, one optional field per
+    parameter name any action declares.
+
+    **`params: dict[str, Any]` cannot be sent to Gemini.** Pydantic emits
+    `"additionalProperties": true` for a bare dict field, and the Developer API rejects
+    `additionalProperties` in either polarity — the same constraint this module already
+    knew about `extra="forbid"`, applied to a field rather than to a model. That was missed
+    when W22 was written and went unnoticed for a day because `propose()` is only exercised
+    in stub mode in CI and no proposer cassette existed; the live path raised on every call
+    (12 Sep, `docs/drift_log.md`).
+
+    Rebuilding it from the catalog rather than hand-listing the fields is what keeps it from
+    drifting when a fourth action lands — the same reason `ACTION_IDS` is read from the
+    catalog at import rather than written out.
+
+    It is also a **narrowing**, not a workaround: the model can now only name parameters
+    some action actually declares, so an invented key is unrepresentable in the response
+    rather than rejected after the fact. Per-action validation is still
+    `catalog.validate_params`' job — this says nothing about which params go with which
+    action, only that a name is one the catalog knows.
+    """
+    from pydantic import create_model
+
+    fields: dict[str, Any] = {}
+    for action in default_catalog():
+        for parameter, spec in action.params.items():
+            # **Required but nullable**, and the combination is deliberate. The union spans
+            # three actions, so a parameter required by one is absent from another and the
+            # schema cannot say "required for *this* action" — the type has to admit null.
+            # But making the field itself optional as well told the model it could simply
+            # omit it, and `gemini-3.5-flash-lite` then filled one parameter of four on most
+            # runs (12 Sep, two recorded rounds). Required-and-nullable forces it to emit
+            # every key and make an explicit decision about each.
+            fields.setdefault(parameter, (spec.python_type | None, ...))
+
+    return create_model("_WireParams", **fields)
+
+
+_WireParams = _wire_params_model()
+
+
 # The provider-facing schema. Gemini's Developer API rejects `additionalProperties` in
-# either polarity, which Pydantic emits for both `extra="forbid"` and `extra="allow"`, so
-# this model sets no `extra` at all — the same split, and the same reasoning, as W18's
-# `_WireOutput`. Weakening `ProposerOutput` to fit would delegate our contract to whatever
-# the provider happens to enforce, and the provider enforces less than we do.
+# either polarity, which Pydantic emits for both `extra="forbid"` and `extra="allow"` **and
+# for a bare `dict[str, Any]` field** — hence `_WireParams` above. This model sets no
+# `extra` at all — the same split, and the same reasoning, as W18's `_WireOutput`.
+# Weakening `ProposerOutput` to fit would delegate our contract to whatever the provider
+# happens to enforce, and the provider enforces less than we do.
 #
 # One-line docstring on purpose: Pydantic ships it as the schema `description`.
 class _WireOutput(BaseModel):
     """Proposed remediation."""
 
     action_id: _ActionId
-    params: dict[str, Any] = Field(default_factory=dict)
+    params: _WireParams
     rationale: str = ""
     evidence_ids: list[str] = Field(default_factory=list)
+
+    def to_proposal_dict(self) -> dict[str, Any]:
+        """The shape `validate_proposal` polices.
+
+        Unset parameters are dropped rather than sent through as `None`: every field is
+        optional on the wire because the union spans three actions, so a `None` here means
+        "this action does not take that parameter", not "it was given no value". Passing
+        them on would make every proposal fail `validate_params` as carrying unknown keys.
+        """
+        payload = self.model_dump()
+        payload["params"] = {
+            name: value for name, value in (payload.get("params") or {}).items()
+            if value is not None
+        }
+        return payload
 
 
 # --------------------------------------------------------------------------------------
@@ -292,6 +350,7 @@ async def propose(
     from ..config import LlmMode, llm_mode
     from .cassette import Cassette, request_key
     from .llm import model_for, provider_for, recording_model_for
+    from .prompts.proposer import SYSTEM_PROMPT
 
     mode = llm_mode()
 
@@ -305,7 +364,7 @@ async def propose(
         if mode is LlmMode.CASSETTE
         else model_for("proposer", mode)
     )
-    key = request_key("proposer", model, messages)
+    key = request_key("proposer", model, messages, system=SYSTEM_PROMPT)
     cassette = Cassette("proposer", directory=cassette_directory)
 
     if mode is LlmMode.CASSETTE:
@@ -356,7 +415,7 @@ async def _invoke(provider, model: str, messages: list[dict]) -> tuple[dict, dic
     if output is None:
         raise ProposalRejected("the model returned no structured output")
 
-    return output.model_dump(), usage or _estimated_usage(messages, output)
+    return output.to_proposal_dict(), usage or _estimated_usage(messages, output)
 
 
 # --------------------------------------------------------------------------------------

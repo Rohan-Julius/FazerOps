@@ -58,6 +58,7 @@ async def main() -> int:
     from fazerops.agents.budget import TokenMeter
     from fazerops.agents.correlator import correlate
     from fazerops.agents.orchestrator import orchestrate
+    from fazerops.agents.proposer import propose
     from fazerops.ingest.alerts import normalize_alert
     from fazerops.pipeline import investigate
 
@@ -99,6 +100,18 @@ async def main() -> int:
         # prompt needs work rather than the validator.
         print(f"    ! dropped: {dropped.text!r} ({dropped.reason})")
 
+    # The proposer, last, because it takes the narrative the correlator just produced.
+    #
+    # **There was no proposer tape at all until 12 Sep.** Not an oversight anyone could have
+    # corrected earlier: `propose()` could not call Gemini until that afternoon's
+    # `additionalProperties` fix (`agents/proposer.py`), so the demo's Tier 1 proposal had
+    # no real-model provenance and cassette mode had nothing to replay for it.
+    proposal = await propose(brief, narrative, meter=meter)
+    print(
+        "\nrecorded proposer cassette: "
+        + ("declined (none)" if proposal is None else f"{proposal.action_id} {proposal.params}")
+    )
+
     # Replay immediately. A cassette that was written but cannot be found by the key the
     # replay path derives is worse than no cassette — it passes recording and fails CI.
     os.environ["FAZEROPS_LLM"] = "cassette"
@@ -111,7 +124,15 @@ async def main() -> int:
     replayed = await correlate(brief)
     assert replayed.primary_cause_event_id == narrative.primary_cause_event_id
 
-    print("\nreplay verified: both cassettes are readable by cassette mode")
+    replayed_proposal = await propose(brief, replayed)
+    if proposal is None:
+        assert replayed_proposal is None
+    else:
+        assert replayed_proposal is not None
+        assert replayed_proposal.action_id == proposal.action_id
+        assert replayed_proposal.params == proposal.params
+
+    print("\nreplay verified: all three cassettes are readable by cassette mode")
 
     return 0
 

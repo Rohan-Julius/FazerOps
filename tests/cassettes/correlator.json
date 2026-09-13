@@ -1,5 +1,5 @@
 {
-  "77c82cd6a8f0d354": {
+  "8b36c525048dc3ba": {
     "model": "gemini-3.5-flash-lite",
     "response": {
       "claims": [
@@ -7,13 +7,13 @@
           "evidence_ids": [
             "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
           ],
-          "text": "Dinesh updated the billing-api-config ConfigMap and reduced pool.max from 100 to 20."
+          "text": "Dinesh updated the billing-api-config ConfigMap and reduced the database connection pool maximum from 100 to 20."
         },
         {
           "evidence_ids": [
             "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
           ],
-          "text": "The reduced connection pool limit directly explains the latency spike and error rate climb in the billing service."
+          "text": "The restricted connection pool severely constrains database concurrency and directly triggers the latency spike and error rate climb in billing-api."
         }
       ],
       "confidence": "high",

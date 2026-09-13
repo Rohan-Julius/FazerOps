@@ -44,8 +44,14 @@ rather than shown to anyone:
 
 1. Choose exactly one action_id from the list above, or return "none" if no listed action
    addresses the change. Proposing nothing is a correct answer and is often the right one.
-2. Fill `params` from the evidence you were given. Every value must come from a change
-   event in the brief — never invent a namespace, a release, a resource name or a value.
+2. Fill **every** parameter the action lists above, unless it is marked optional. A
+   proposal missing one is rejected outright, so a partial `params` object helps nobody.
+   Every value must come from a change event in the brief — never invent a namespace, a
+   release, a resource name or a value.
+   The `params` object asks for every parameter any action takes, because it spans all
+   three. Set the ones your chosen action does not take to null. The ones it *does* take
+   must all be filled — enforced by `catalog.validate_params`, not by the schema, which
+   cannot express "required for *this* action".
 3. `evidence_ids` must list the change event ids your proposal rests on, and they must be
    ids the analyst cited. A proposal resting on evidence nobody cited is rejected.
 4. Propose the action that **reverts** the suspect change. You are not designing a fix; you

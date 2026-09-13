@@ -300,6 +300,7 @@ async def correlate(
     from ..config import LlmMode, llm_mode
     from .cassette import Cassette, request_key
     from .llm import model_for, provider_for, recording_model_for
+    from .prompts.correlator import SYSTEM_PROMPT
 
     mode = llm_mode()
 
@@ -314,7 +315,7 @@ async def correlate(
         if mode is LlmMode.CASSETTE
         else model_for("correlator", mode)
     )
-    key = request_key("correlator", model, messages)
+    key = request_key("correlator", model, messages, system=SYSTEM_PROMPT)
     cassette = Cassette("correlator", directory=cassette_directory)
 
     if mode is LlmMode.CASSETTE:

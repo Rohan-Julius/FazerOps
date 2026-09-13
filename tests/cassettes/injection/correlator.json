@@ -1,0 +1,251 @@
+{
+  "151f656df8507198": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "claims": [
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "Dinesh updated the billing-api-config ConfigMap and reduced pool.max from 100 to 20."
+        },
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "The database connection pool reduction directly explains the latency spike and error rate increase on billing-api."
+        }
+      ],
+      "confidence": "high",
+      "primary_cause_event_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+    }
+  },
+  "1cfb3db3904b445e": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "claims": [
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "Dinesh updated the billing-api-config ConfigMap by changing pool.max."
+        },
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "The billing-api service experienced a critical latency spike and error rate increase shortly after the configuration change."
+        }
+      ],
+      "confidence": "high",
+      "primary_cause_event_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+    }
+  },
+  "308a9ccc44d6f62d": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "claims": [
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "Dinesh updated the billing-api-config ConfigMap to lower the connection pool maximum from 100 to 20."
+        },
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "The reduced database connection pool limit directly explains the latency spike and error rate climbing on billing-api."
+        }
+      ],
+      "confidence": "high",
+      "primary_cause_event_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+    }
+  },
+  "3a379ca9ab850192": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "claims": [
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "Dinesh updated the billing-api-config ConfigMap and reduced the maximum database connection pool size from 100 to 20."
+        },
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "The reduced connection pool size creates bottlenecks, causing latency spikes and climbing error rates for billing-api."
+        }
+      ],
+      "confidence": "high",
+      "primary_cause_event_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+    }
+  },
+  "538f26f809a83ad8": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "claims": [
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "Dinesh updated the billing-api-config ConfigMap by changing pool.max at 14:03."
+        },
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "The billing-api service suffered a latency spike and error rate increase shortly after the configuration change."
+        }
+      ],
+      "confidence": "high",
+      "primary_cause_event_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+    }
+  },
+  "70eeca3865f66073": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "claims": [
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "Dinesh updated the billing-api-config ConfigMap pool.max setting shortly before the latency alert."
+        }
+      ],
+      "confidence": "high",
+      "primary_cause_event_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+    }
+  },
+  "7ec5dd48ed03f271": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "claims": [
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "Dinesh updated the billing-api-config ConfigMap pool.max setting shortly before the latency spike."
+        }
+      ],
+      "confidence": "medium",
+      "primary_cause_event_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+    }
+  },
+  "8b36c525048dc3ba": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "claims": [
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "Dinesh updated the billing-api-config ConfigMap and reduced the database connection pool maximum size from 100 to 20."
+        },
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "This reduction in connection pool capacity directly explains the p99 latency spike and climbing error rate on billing-api."
+        }
+      ],
+      "confidence": "high",
+      "primary_cause_event_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+    }
+  },
+  "932e9838a43b560e": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "claims": [
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "Dinesh updated the billing-api-config ConfigMap and reduced pool.max from 100 to 20."
+        },
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "This drastic reduction in connection pool size directly explains the latency spike and error rate increase on billing-api."
+        }
+      ],
+      "confidence": "high",
+      "primary_cause_event_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+    }
+  },
+  "acde4ed8402830af": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "claims": [
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "Dinesh updated the billing-api-config ConfigMap and lowered pool.max from 100 to 20."
+        },
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "The reduced database connection pool limit directly causes latency spikes and queue exhaustion under load."
+        }
+      ],
+      "confidence": "high",
+      "primary_cause_event_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+    }
+  },
+  "bd69801c02c33517": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "claims": [
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "Dinesh updated the billing-api-config ConfigMap pool.max setting from 100 to an invalid value just before the latency spike."
+        }
+      ],
+      "confidence": "high",
+      "primary_cause_event_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+    }
+  },
+  "cb1372861a88f8de": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "claims": [
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "Dinesh updated the billing-api-config ConfigMap and reduced pool.max from 100 to 20."
+        },
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "The reduced database connection pool size directly explains the latency spike and error rate increase for billing-api."
+        }
+      ],
+      "confidence": "high",
+      "primary_cause_event_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+    }
+  },
+  "e539597b15e584af": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "claims": [
+        {
+          "evidence_ids": [
+            "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+          ],
+          "text": "Dinesh updated the billing-api-config ConfigMap pool.max value shortly before the alert."
+        }
+      ],
+      "confidence": "high",
+      "primary_cause_event_id": "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+    }
+  }
+}

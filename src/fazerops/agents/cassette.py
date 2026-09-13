@@ -5,8 +5,10 @@ Agent behaviour has to be asserted in CI, and CI has no credentials and no netwo
 how a real model response becomes a test fixture: recorded once against Bedrock, replayed
 deterministically thereafter at zero cost.
 
-**Keyed on a hash of the request**, so a changed prompt misses the cassette rather than
-silently replaying the answer to a question nobody asked any more. That miss is the point:
+**Keyed on a hash of the request — the system prompt included**, so a changed prompt
+misses the cassette rather than silently replaying the answer to a question nobody asked
+any more. The system prompt was *not* in the key until 12 Sep, which made this paragraph
+false for the only prompt that carries the instructions; `request_key` now demands it. That miss is the point:
 prompts change constantly during a build, and a cassette layer that tolerates drift would
 let W18's citation validator be tested against a response the current prompt cannot
 produce.
@@ -36,15 +38,32 @@ class CassetteMiss(LookupError):
     """
 
 
-def request_key(agent: str, model: str, messages: Any, **params: Any) -> str:
+def request_key(
+    agent: str, model: str, messages: Any, *, system: str, **params: Any
+) -> str:
     """A stable hash over everything that could change the response.
 
     `sort_keys` and `default=str` make the digest independent of dict ordering and of
     types JSON does not know — without them the same request hashes differently between
     runs and every replay is a miss.
+
+    **`system` is required, and has no default, because omitting it silently broke this
+    module's central promise.** Until 12 Sep the key covered only the user turn: every
+    agent passes its `SYSTEM_PROMPT` separately to `structured_output`, so editing the
+    prompt — the substantive half — left every tape replaying, and the docstring above
+    claiming a changed prompt misses was false for the prompt that matters. A default of
+    `None` would have made the same omission possible one call site at a time; a required
+    keyword makes forgetting it a `TypeError` at the call rather than a stale replay
+    discovered on camera.
     """
     payload = json.dumps(
-        {"agent": agent, "model": model, "messages": messages, "params": params},
+        {
+            "agent": agent,
+            "model": model,
+            "messages": messages,
+            "system": system,
+            "params": params,
+        },
         sort_keys=True,
         default=str,
     )

@@ -1,0 +1,210 @@
+{
+  "216ade1ec82234ba": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "action_id": "revert_configmap_key",
+      "evidence_ids": [
+        "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+      ],
+      "params": {
+        "key": "pool.max",
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "target_value": "100"
+      },
+      "rationale": "Reverting the pool.max ConfigMap key back to 100 will resolve the latency spikes and connection queue exhaustion caused by Dinesh's out-of-band reduction."
+    }
+  },
+  "2576d33927a78917": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "action_id": "revert_configmap_key",
+      "evidence_ids": [
+        "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+      ],
+      "params": {
+        "key": "pool.max",
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "target_value": "100"
+      },
+      "rationale": "Restore the pool.max ConfigMap key back to 100 to relieve connection bottlenecking and fix the latency spike."
+    }
+  },
+  "267ba702cb8bc376": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "action_id": "revert_configmap_key",
+      "evidence_ids": [
+        "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+      ],
+      "params": {
+        "key": "pool.max",
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "target_value": "100"
+      },
+      "rationale": "Revert the pool.max ConfigMap key back to 100 to restore connection pool capacity and resolve the billing-api latency spike."
+    }
+  },
+  "77c32d8783932e42": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "action_id": "revert_configmap_key",
+      "evidence_ids": [
+        "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+      ],
+      "params": {
+        "key": "pool.max",
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "target_value": "100"
+      },
+      "rationale": "Reverting the 'pool.max' ConfigMap key in the billing namespace back to 100 will restore the database connection pool capacity and resolve the billing-api latency spike."
+    }
+  },
+  "787dd848f8965593": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "action_id": "revert_configmap_key",
+      "evidence_ids": [
+        "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+      ],
+      "params": {
+        "key": "pool.max",
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "target_value": "100"
+      },
+      "rationale": "Revert the pool.max setting in the billing-api-config ConfigMap back to its prior value of 100 to mitigate the latency spike caused by the recent out-of-band modification."
+    }
+  },
+  "7c2324a577300207": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "action_id": "revert_configmap_key",
+      "evidence_ids": [
+        "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+      ],
+      "params": {
+        "key": "pool.max",
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "target_value": "100"
+      },
+      "rationale": "Reverting pool.max in the billing-api-config ConfigMap back to its prior value of 100 to mitigate the latency spike."
+    }
+  },
+  "89c16f15f80d2971": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "action_id": "revert_configmap_key",
+      "evidence_ids": [
+        "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+      ],
+      "params": {
+        "key": "pool.max",
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "target_value": "100"
+      },
+      "rationale": "Restore pool.max in billing-api-config back to 100 to reverse the connection pool throttling causing latency spikes."
+    }
+  },
+  "9c4cdd1246904648": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "action_id": "revert_configmap_key",
+      "evidence_ids": [
+        "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+      ],
+      "params": {
+        "key": "pool.max",
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "target_value": "100"
+      },
+      "rationale": "Reverting pool.max in billing-api-config back to its prior value of 100 to mitigate the latency spike and error rate increase."
+    }
+  },
+  "b48dd2236467d9aa": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "action_id": "revert_configmap_key",
+      "evidence_ids": [
+        "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+      ],
+      "params": {
+        "key": "pool.max",
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "target_value": "100"
+      },
+      "rationale": "Reverting pool.max back to 100 in the billing-api-config ConfigMap will restore the database connection pool size and resolve the latency spike."
+    }
+  },
+  "bd941146da415af3": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "action_id": "revert_configmap_key",
+      "evidence_ids": [
+        "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+      ],
+      "params": {
+        "key": "pool.max",
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "target_value": "100"
+      },
+      "rationale": "Revert the pool.max ConfigMap key back to 100 to restore connection pool capacity and resolve the latency spike."
+    }
+  },
+  "ca9bd548217c1cfc": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "action_id": "revert_configmap_key",
+      "evidence_ids": [
+        "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+      ],
+      "params": {
+        "key": "pool.max",
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "target_value": "100"
+      },
+      "rationale": "Revert pool.max in the billing-api-config ConfigMap back to 100 to mitigate the latency spike caused by the recent out-of-band change."
+    }
+  },
+  "e7f68cd5cea4dfc4": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "action_id": "revert_configmap_key",
+      "evidence_ids": [
+        "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+      ],
+      "params": {
+        "key": "pool.max",
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "target_value": "100"
+      },
+      "rationale": "Revert the pool.max ConfigMap key back to 100 to mitigate the billing-api latency spike and error rate increase caused by Dinesh's change."
+    }
+  },
+  "f3e34da3e1a10fcc": {
+    "model": "gemini-3.5-flash-lite",
+    "response": {
+      "action_id": "revert_configmap_key",
+      "evidence_ids": [
+        "65a6f2b9-9a21-4c85-94bd-641b40bb50e6"
+      ],
+      "params": {
+        "key": "pool.max",
+        "name": "billing-api-config",
+        "namespace": "billing",
+        "target_value": "100"
+      },
+      "rationale": "Revert the pool.max value in billing-api-config back to 100 to mitigate the latency spike caused by the out-of-band change."
+    }
+  }
+}

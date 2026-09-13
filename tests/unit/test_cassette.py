@@ -18,6 +18,7 @@ import pytest
 from fazerops.agents.cassette import Cassette, CassetteMiss, request_key
 
 MESSAGES = [{"role": "user", "content": [{"text": "rank these changes"}]}]
+SYSTEM = "You are the correlation analyst."
 
 RESPONSE = {
     "narrative": "The ConfigMap change reduced the connection pool from 100 to 20.",
@@ -37,7 +38,7 @@ def cassette(tmp_path):
 
 
 def test_record_then_replay_returns_the_response_unchanged(cassette):
-    key = request_key("correlator", "amazon.nova-pro-v1:0", MESSAGES)
+    key = request_key("correlator", "amazon.nova-pro-v1:0", MESSAGES, system=SYSTEM)
     cassette.record(key, RESPONSE, model="amazon.nova-pro-v1:0")
 
     assert cassette.replay(key) == RESPONSE
@@ -46,7 +47,7 @@ def test_record_then_replay_returns_the_response_unchanged(cassette):
 def test_a_replay_survives_a_new_process(tmp_path):
     """Recording and replaying in one object proves a dict works. The cassette's whole
     job is to outlive the process that recorded it."""
-    key = request_key("correlator", "amazon.nova-pro-v1:0", MESSAGES)
+    key = request_key("correlator", "amazon.nova-pro-v1:0", MESSAGES, system=SYSTEM)
     Cassette("correlator", directory=tmp_path).record(
         key, RESPONSE, model="amazon.nova-pro-v1:0"
     )
@@ -57,8 +58,8 @@ def test_a_replay_survives_a_new_process(tmp_path):
 def test_recording_a_second_prompt_keeps_the_first(cassette):
     """Read-modify-write, not overwrite. Re-recording one prompt must not silently drop
     every other recording for that agent."""
-    first = request_key("correlator", "amazon.nova-pro-v1:0", MESSAGES)
-    second = request_key("correlator", "amazon.nova-pro-v1:0", [{"role": "user", "x": 1}])
+    first = request_key("correlator", "amazon.nova-pro-v1:0", MESSAGES, system=SYSTEM)
+    second = request_key("correlator", "amazon.nova-pro-v1:0", [{"role": "user", "x": 1}], system=SYSTEM)
 
     cassette.record(first, RESPONSE, model="amazon.nova-pro-v1:0")
     cassette.record(second, {"narrative": "other"}, model="amazon.nova-pro-v1:0")
@@ -68,7 +69,7 @@ def test_recording_a_second_prompt_keeps_the_first(cassette):
 
 
 def test_re_recording_the_same_key_replaces_it(cassette):
-    key = request_key("correlator", "amazon.nova-pro-v1:0", MESSAGES)
+    key = request_key("correlator", "amazon.nova-pro-v1:0", MESSAGES, system=SYSTEM)
     cassette.record(key, RESPONSE, model="amazon.nova-pro-v1:0")
     cassette.record(key, {"narrative": "re-recorded"}, model="amazon.nova-pro-v1:0")
 
@@ -77,7 +78,7 @@ def test_re_recording_the_same_key_replaces_it(cassette):
 
 def test_each_agent_gets_its_own_file(tmp_path):
     """Recording the orchestrator must not clobber the correlator's cassette."""
-    key = request_key("orchestrator", "amazon.nova-lite-v1:0", MESSAGES)
+    key = request_key("orchestrator", "amazon.nova-lite-v1:0", MESSAGES, system=SYSTEM)
     Cassette("orchestrator", directory=tmp_path).record(
         key, {"service": "billing-api"}, model="amazon.nova-lite-v1:0"
     )
@@ -110,7 +111,7 @@ def test_replay_opens_no_socket_even_on_a_miss(cassette, monkeypatch):
 
     monkeypatch.setattr(socket, "socket", forbidden)
 
-    key = request_key("correlator", "amazon.nova-pro-v1:0", MESSAGES)
+    key = request_key("correlator", "amazon.nova-pro-v1:0", MESSAGES, system=SYSTEM)
     cassette.record(key, RESPONSE, model="amazon.nova-pro-v1:0")
     assert cassette.replay(key) == RESPONSE
 
@@ -131,14 +132,14 @@ def test_the_miss_message_says_how_to_fix_it(cassette):
 
 
 def test_the_same_request_hashes_the_same_way():
-    assert request_key("correlator", "m", MESSAGES) == request_key("correlator", "m", MESSAGES)
+    assert request_key("correlator", "m", MESSAGES, system=SYSTEM) == request_key("correlator", "m", MESSAGES, system=SYSTEM)
 
 
 def test_dict_ordering_does_not_change_the_key():
     """Without `sort_keys` the same request hashes differently between runs and every
     replay is a miss — a failure that looks like a broken cassette file."""
-    a = request_key("correlator", "m", [{"role": "user", "content": "x"}])
-    b = request_key("correlator", "m", [{"content": "x", "role": "user"}])
+    a = request_key("correlator", "m", [{"role": "user", "content": "x"}], system=SYSTEM)
+    b = request_key("correlator", "m", [{"content": "x", "role": "user"}], system=SYSTEM)
     assert a == b
 
 
@@ -148,19 +149,28 @@ def test_dict_ordering_does_not_change_the_key():
         {"agent": "proposer"},
         {"model": "amazon.nova-lite-v1:0"},
         {"messages": [{"role": "user", "content": [{"text": "different"}]}]},
+        # The case this list was missing until 12 Sep, and the one that mattered most:
+        # every agent passes its SYSTEM_PROMPT separately to `structured_output`, so a key
+        # that omitted it let a prompt edit replay stale tapes in silence.
+        {"system": "You are a different analyst entirely."},
     ],
 )
 def test_anything_that_could_change_the_response_changes_the_key(kwargs):
     """A changed prompt must *miss*, not replay the answer to a question nobody asked any
     more. Otherwise W18's citation validator gets tested against a response the current
     prompt can no longer produce."""
-    base = {"agent": "correlator", "model": "amazon.nova-pro-v1:0", "messages": MESSAGES}
+    base = {
+        "agent": "correlator",
+        "model": "amazon.nova-pro-v1:0",
+        "messages": MESSAGES,
+        "system": SYSTEM,
+    }
     assert request_key(**base) != request_key(**{**base, **kwargs})
 
 
 def test_inference_params_are_part_of_the_key():
-    base = request_key("correlator", "m", MESSAGES, temperature=0.0)
-    assert base != request_key("correlator", "m", MESSAGES, temperature=1.0)
+    base = request_key("correlator", "m", MESSAGES, system=SYSTEM, temperature=0.0)
+    assert base != request_key("correlator", "m", MESSAGES, system=SYSTEM, temperature=1.0)
 
 
 def test_a_non_json_value_does_not_break_the_key():
@@ -168,16 +178,56 @@ def test_a_non_json_value_does_not_break_the_key():
     that raises on one takes the whole run down for a hashing detail."""
     from datetime import datetime, timezone
 
-    assert request_key("correlator", "m", [{"at": datetime.now(timezone.utc)}])
+    assert request_key("correlator", "m", [{"at": datetime.now(timezone.utc)}], system=SYSTEM)
 
 
 def test_the_cassette_file_is_readable_json(cassette):
     """These are committed fixtures a judge may open, and a re-record that reordered every
     key would make the diff unreviewable."""
-    key = request_key("correlator", "amazon.nova-pro-v1:0", MESSAGES)
+    key = request_key("correlator", "amazon.nova-pro-v1:0", MESSAGES, system=SYSTEM)
     cassette.record(key, RESPONSE, model="amazon.nova-pro-v1:0")
 
     raw = cassette.path.read_text()
     assert json.loads(raw)[key]["model"] == "amazon.nova-pro-v1:0"
     assert raw.endswith("\n")
     assert "\n  " in raw, "indented, not one line"
+
+
+# --------------------------------------------------------------------------------------
+# Structural — no agent can key a request without its system prompt
+# --------------------------------------------------------------------------------------
+
+
+def test_every_agent_passes_its_system_prompt_to_request_key():
+    """Reads the AST of every agent module rather than trusting the three call sites that
+    exist today.
+
+    `system` is a required keyword, so an omission is already a `TypeError` — but only on a
+    code path that runs, and `record` mode is exercised by nothing in CI. This is the
+    assertion that fires at review time instead, and it covers an agent nobody has written
+    yet. The defect it pins was live for a day: the key covered only the user turn, so
+    editing a `SYSTEM_PROMPT` left every tape replaying and `cassette.py`'s own docstring
+    was false about the prompt that carries the instructions.
+    """
+    import ast
+    from pathlib import Path
+
+    agents_dir = Path(__file__).resolve().parents[2] / "src" / "fazerops" / "agents"
+    calls = 0
+
+    for source_file in sorted(agents_dir.glob("*.py")):
+        tree = ast.parse(source_file.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = node.func.id if isinstance(node.func, ast.Name) else None
+            if name != "request_key":
+                continue
+            calls += 1
+            keywords = {kw.arg for kw in node.keywords}
+            assert "system" in keywords, (
+                f"{source_file.name}:{node.lineno} keys a cassette request without its "
+                "system prompt; a prompt edit would replay the old tape in silence"
+            )
+
+    assert calls >= 3, f"expected a request_key call per agent, found {calls}"

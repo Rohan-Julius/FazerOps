@@ -292,11 +292,14 @@ def _replay(session: OrchestrationSession, *, hours: int = DEFAULT_WINDOW_HOURS)
 
     from .cassette import Cassette, request_key
     from .llm import recording_model_for
+    from .prompts.orchestrator import SYSTEM_PROMPT
 
     from .cassette import CassetteMiss
 
     model = recording_model_for("orchestrator")
-    key = request_key("orchestrator", model, _decision_messages(session.alert))
+    key = request_key(
+        "orchestrator", model, _decision_messages(session.alert), system=SYSTEM_PROMPT
+    )
     try:
         recorded = Cassette("orchestrator").replay(key)
     except CassetteMiss as exc:
@@ -424,8 +427,11 @@ def _record(session: OrchestrationSession, plan: Plan, model_id: str) -> None:
     Python that replays exactly by being re-run. `_replay` reads precisely this shape.
     """
     from .cassette import Cassette, request_key
+    from .prompts.orchestrator import SYSTEM_PROMPT
 
-    key = request_key("orchestrator", model_id, _decision_messages(session.alert))
+    key = request_key(
+        "orchestrator", model_id, _decision_messages(session.alert), system=SYSTEM_PROMPT
+    )
     Cassette("orchestrator").record(
         key,
         {"service": plan.service, "window_hours": int(plan.window.hours)},
