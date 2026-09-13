@@ -31,6 +31,8 @@ __all__ = [
     "Decision",
     "DecisionSink",
     "MalformedCallback",
+    "approval_card_for",
+    "approval_sink",
     "SlackNotConfigured",
     "build_app",
     "parse_decision",
@@ -236,6 +238,98 @@ def _record_only(decision: Decision) -> str:
         f"<@{decision.user_id}> {verb} `{decision.action_id}` for {decision.incident_id}. "
         "Routing and execution land with W26; nothing has run."
     )
+
+
+def approval_card_for(pending: Any) -> list[dict[str, Any]]:
+    """Render the approval card for a `PendingApproval`. W26b.
+
+    The one mapping from gateway state to card, so a caller cannot hand `approval_card` the
+    *declared* tier by mistake — which would understate an escalation on precisely the
+    action that escalated, and is the reason `blocks.approval_card` takes the tier as an
+    argument rather than reading the catalog itself.
+    """
+    from .blocks import approval_card
+
+    return approval_card(
+        pending.dry_run,
+        incident_id=pending.incident_id,
+        tier=pending.tier,
+        escalation_reason=pending.escalation_reason,
+    )
+
+
+def approval_sink(
+    gateway: Any,
+    *,
+    resolve_approver: Callable[[str], Any],
+) -> DecisionSink:
+    """W26 — the sink that routes a click to the approval gateway.
+
+    This is the seam W25 left open, filled without touching parsing, acking or the socket.
+    It is deliberately thin: every decision this function could get wrong — the tier, the
+    scope, whether it already ran — is made by `actions/approval.py`, which is the module
+    the credential gate allowlists. **Nothing here re-derives an action from the payload.**
+
+    `resolve_approver` maps a Slack user id to an `Approver` and is injected rather than
+    read from a roster here, because W26b owns the roster and this function must not grow a
+    default that treats an unknown clicker as an engineer.
+
+    Returns the line Slack shows. **It never renders an executed result's values** — the
+    inverse summary printed a redacted value back out in full once already (12 Sep,
+    `docs/drift_log.md`), and the result of a ConfigMap patch is exactly the kind of value
+    that was redacted on the card two messages earlier.
+    """
+    from ..actions.approval import ApprovalRefused, ApproverNotPermitted, NotAwaitingApproval
+
+    def sink(decision: Decision) -> str | None:
+        if decision.kind == "show_all":
+            return f"Full change list for {decision.incident_id} — see the incident record."
+
+        try:
+            # Inside the guard on purpose: `roster.UnknownApprover` is an `ApprovalRefused`,
+            # and resolving outside the try would let an unlisted clicker raise through the
+            # Bolt listener instead of being told they are not on the roster.
+            approver = resolve_approver(decision.user_id)
+            outcome = gateway.decide(
+                incident_id=decision.incident_id,
+                action_id=decision.action_id,
+                approver=approver,
+                kind=decision.kind,
+            )
+        except ApproverNotPermitted as exc:
+            # Visible, and it names the escalation. A silently ignored click looks to the
+            # operator exactly like an approval that worked.
+            return f":lock: {exc}"
+        except NotAwaitingApproval:
+            return (
+                f":no_entry: No approval is open for `{decision.action_id}` on "
+                f"{decision.incident_id}. Nothing has run."
+            )
+        except ApprovalRefused as exc:
+            return f":no_entry: {exc}"
+
+        if outcome.replay:
+            return (
+                f":repeat: `{outcome.action_id}` on {outcome.incident_id} was already "
+                f"{outcome.decision} by <@{outcome.approver}>. Nothing was re-run."
+            )
+        if outcome.decision == "rejected":
+            return (
+                f":x: <@{outcome.approver}> rejected `{outcome.action_id}` for "
+                f"{outcome.incident_id}. Nothing has run."
+            )
+        if outcome.error:
+            return (
+                f":warning: `{outcome.action_id}` was approved by <@{outcome.approver}> but "
+                f"failed: {outcome.error}. Check the resource before retrying — the "
+                "approval will not run again."
+            )
+        return (
+            f":white_check_mark: <@{outcome.approver}> approved `{outcome.action_id}` for "
+            f"{outcome.incident_id} (tier {int(outcome.tier)}); it executed once."
+        )
+
+    return sink
 
 
 def post_brief(
