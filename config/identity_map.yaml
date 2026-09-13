@@ -28,6 +28,16 @@ identities:
     github:
       - priya-s
 
+  # The demo's second out-of-band actor (`scripts/demo_world.py`). Catalog growth needs a gap
+  # caused by two different people before it proposes anything (§7.1).
+  arun:
+    kind: human
+    display_name: Arun K
+    k8s_audit:
+      - arun@faber-demo.io
+    github:
+      - arun-k
+
   ci-deployer:
     kind: service_account
     display_name: CI deploy pipeline

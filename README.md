@@ -36,6 +36,23 @@ Requires no AWS credentials and no network — the default path runs entirely on
 pytest -m cluster               # the cluster-backed tests
 ```
 
+The containment sandbox (catalog growth) runs only on the cluster `FAZEROPS_SANDBOX_CONTEXT`
+names — locally, `k3d-fazerops` — and never falls back to the current context. It creates a
+throwaway namespace per check and deletes it afterwards.
+
+### Running the automation layer
+
+```bash
+python -m fazerops.actions.server         # alerts in, brief and approval cards to Slack, clicks back,
+                                          # and the catalog-growth job hourly beside them
+python -m fazerops.actions.growth mine --commit-to . --base main   # one cycle, committed to local branches
+```
+
+The quickstart's `main.py` stays read-only; the automation server is a separate process
+because an approval card and the click that decides it must reach the same one. The growth job
+commits signed bundles to local `catalog-growth/*` branches, made in a throwaway worktree so the
+checkout is untouched, and checks each as CI will. It never pushes: opening the PR is yours.
+
 `setup_k3d.sh` creates the cluster with `RequestResponse` auditing for ConfigMaps and
 Secrets, which is what makes the demo's before/after diff a real object body rather than
 an assertion. The fixtures under `fixtures/k8s_audit/` are recordings from this cluster,
@@ -97,6 +114,32 @@ hidden behind a partially working feature.
 - **There is no post-execution verification.** Nothing re-reads state to confirm that an
   approved remediation took effect; the human observes the recovery. This is a gap in the
   specification rather than an oversight, and it is disclosed rather than papered over.
+- **The action catalog grows from production evidence, and a model can write code.**
+  When the agent finds a cause the catalog cannot act on — a declined proposal, a rejected one,
+  a change with no computable inverse — that fact is recorded as a typed signal with no free
+  text in it. A gap seen across at least two incidents and two distinct actors becomes a local
+  PR bundle, by the cheapest of three routes: widening an existing action's parameters (only
+  widenings the hand-written code already supports), a declarative entry over a human-written
+  writer, or — only when neither can express the gap — a writer whose `read` and `write`
+  functions a model authored. Every route must agree, in dry run, with every fix a human
+  actually made for that gap, and the gap is recounted from signals the ledger still vouches
+  for, or nothing is written. Generated code passes a strict allowlist and a test against a
+  fake client, and is then run in a throwaway Kubernetes namespace under an identity that can
+  touch one resource type there, with the audit log watched: a writer that reaches for anything
+  but its declared resource is rejected. It never computes its own inverse, dry run or
+  credential check. Nothing generated sets its own approval tier or permissions; CI rejects
+  agent-authored commits that try, or whose evidence the ledger's deployment did not sign, and
+  a merged generated action needs a manager's approval every time until it has a clean record.
+  The sandbox proves containment, not safety under production load, and only Kubernetes has one.
+- **During an incident, a missing action can be built for that incident only.** When the
+  proposer declines and the top-ranked change is a Kubernetes change no catalog action can
+  revert, Python — never the model — builds a one-shot action from the recorded prior value,
+  using a human-written writer if one exists and a model-authored one otherwise. It is run in
+  the sandbox first and then shown to a manager as an approval card; it is never added to the
+  catalog and executes at most once per incident, resource and field. Its generated code runs
+  in a separate interpreter that can reach only the resource named on the card. **The manager
+  approves a diff, not the code** — nobody reviews a one-shot's code before it runs. CloudTrail
+  changes never get a one-shot: no prior value is recorded, and delivery is minutes late.
 - **The premise was not validated with pilot teams during the submission period.** The
   claim that out-of-band change is a dominant source of incidents rests on prior research
   and on the authors' experience, not on interviews conducted for this build. There was no
@@ -106,7 +149,7 @@ hidden behind a partially working feature.
 
 Four properties enforced structurally rather than by convention:
 
-1. **The model never emits a command string.** It selects an `action_id` from a typed catalog and supplies validated parameters.
+1. **The model never emits a command string.** It selects an `action_id` from a typed catalog and supplies validated parameters. *One disclosed exception:* catalog growth can ask a model to write a writer's two functions — for a PR, or for a one-shot action during an incident. That code is allowlisted, template-bound and contained in a sandbox before anyone is asked; it runs in a separate interpreter pinned to one resource, only behind a human-written dry run, inverse and credential check, and only on a manager's approval. The model still never names an action.
 2. **Alert and log text is data, never instruction.** It enters model context inside an untrusted-data envelope.
 3. **Read and write are different principals.** The actor credential is minted only after approval, scoped to one namespace, with a short TTL.
 4. **Every mutating action computes its inverse before executing** and refuses to run if it cannot.

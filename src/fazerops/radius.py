@@ -25,6 +25,24 @@ DEFAULT_MANIFEST = Path(__file__).resolve().parents[2] / "config" / "service_man
 # Handoff §4: one hop is defensible and demoable; two hops explodes the candidate set.
 MAX_HOPS = 1
 
+# `service=owner/repo[,service=owner/repo]` — the repositories a deployment actually watches,
+# replacing the manifest's placeholders per service without editing the checked-in file.
+SERVICE_REPOS_ENV = "FAZEROPS_SERVICE_REPOS"
+
+
+def _repo_overrides() -> dict[str, list[str]]:
+    import os
+
+    overrides: dict[str, list[str]] = {}
+    for part in (os.environ.get(SERVICE_REPOS_ENV) or "").split(","):
+        if not part.strip():
+            continue
+        service, separator, repo = part.partition("=")
+        if not separator or "/" not in repo:
+            raise ValueError(f"{SERVICE_REPOS_ENV} entries are service=owner/repo; got {part.strip()!r}")
+        overrides.setdefault(service.strip(), []).append(repo.strip())
+    return overrides
+
 
 class ServiceManifest:
     """Parsed `config/service_manifest.yaml`, with resolution over it."""
@@ -35,7 +53,14 @@ class ServiceManifest:
     @classmethod
     def load(cls, path: Path | str | None = None) -> ServiceManifest:
         raw = yaml.safe_load(Path(path or DEFAULT_MANIFEST).read_text(encoding="utf-8"))
-        return cls((raw or {}).get("services") or {})
+        services = (raw or {}).get("services") or {}
+        for service, repos in _repo_overrides().items():
+            if service not in services:
+                # A typo here would silently watch nothing, and "nothing shipped" is the claim
+                # this product must never make by accident.
+                raise ValueError(f"{SERVICE_REPOS_ENV} names {service!r}, which the manifest does not know")
+            services[service] = {**services[service], "github": {**(services[service].get("github") or {}), "repos": repos}}
+        return cls(services)
 
     @property
     def service_names(self) -> tuple[str, ...]:
