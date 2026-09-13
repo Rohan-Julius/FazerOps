@@ -5,18 +5,22 @@ executor is a live path to an `ImportError` mid-demo. That rule is about the **i
 every `executor:` in `config/actions.yaml` resolves to a real callable, checked at catalog
 load time by `catalog.resolve_executor`.
 
-The mutating bodies land on their own scheduled days. **`configmap` is written (W24,
-12 Sep)** and no longer raises this; `helm` (W20b) and `rds` (W20c) are Sep 12's work.
-Until then each remaining executor raises this, by name, with its work unit in the
-message. That is deliberately loud and deliberately *not* an
-ImportError: the failure is visible in a test, attributable to a known unit, and reached
-only after the inverse has already been computed and the dry run already rendered — so
-everything ground rule #4 promises is exercised regardless.
+**Nothing raises this any more.** All three Handoff §7 executors are written —
+`configmap` (W24), `helm` (W20b) and `rds` (W20c), the last two on 12 Sep — so the catalog
+carries no declared-but-unimplemented entry on any axis: every `executor:` resolves *and*
+every one of them executes.
 
-`tests/unit/test_catalog_schema.py` asserts the resolvability; it will assert executability
-as each unit lands. `tests/security/test_credential_gate.py` reads the AST of every executor
-in this package and requires each written body to call `require_actor_credential` — the ones
-still raising `pending` are skipped by that check, so the guarantee arrives with the body.
+It is kept rather than deleted because it is the thing that made the staging honest. While
+a body was unwritten it raised this, by name, with its work unit in the message —
+deliberately loud and deliberately *not* an ImportError: the failure was visible in a test,
+attributable to a known unit, and reached only after the inverse had been computed and the
+dry run rendered, so everything ground rule #4 promises was exercised regardless. A fourth
+action arriving later should use it the same way rather than inventing a quieter marker.
+
+`tests/unit/test_catalog_schema.py` asserts the resolvability. `tests/security/test_credential_gate.py`
+reads the AST of every executor in this package and requires each written body to call
+`require_actor_credential`; it skips any still raising `pending`, and **that skip list is
+now empty**, so all three executors are covered by it rather than two.
 """
 
 from __future__ import annotations
