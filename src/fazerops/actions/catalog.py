@@ -40,6 +40,7 @@ __all__ = [
     "ValidationRejected",
     "default_catalog",
     "effective_tier",
+    "promote",
     "resolve_executor",
     "validate_params",
 ]
@@ -253,6 +254,59 @@ def validate_params(action: ActionSpec, params: dict[str, Any]) -> dict[str, Any
     return validated
 
 
+def promote(
+    action: ActionSpec,
+    *,
+    estimated_cost_delta_usd: float | None = None,
+    resource_count: int | None = None,
+    crosses_namespace_boundary: bool = False,
+    thresholds: Thresholds | None = None,
+) -> tuple[Tier, str | None]:
+    """The tier this action runs at after promotion, and *why* it was promoted.
+
+    The tier and the reason come from one traversal of the rules because W26b renders the
+    reason on the approval card next to the tier. Computing them separately would let a
+    card state Tier 2 with an explanation drawn from a rule that did not actually fire —
+    and the explanation is the only part of an escalation a human can check.
+
+    **There is no path through this function that returns a tier below `action.tier`.** The
+    only operator is `max`, and that is deliberate: a demotion rule would let an attacker
+    who can influence a resource count lower the approval bar on a mutation.
+    """
+    thresholds = thresholds if thresholds is not None else default_catalog().thresholds
+    reasons: list[str] = []
+
+    cost_limit = thresholds.estimated_cost_delta_usd
+    if (
+        cost_limit is not None
+        and estimated_cost_delta_usd is not None
+        and estimated_cost_delta_usd > cost_limit
+    ):
+        reasons.append(
+            f"estimated cost delta ${estimated_cost_delta_usd:,.2f} exceeds the "
+            f"${cost_limit:,.2f} threshold"
+        )
+
+    count_limit = thresholds.resource_count
+    if count_limit is not None and resource_count is not None and resource_count > count_limit:
+        reasons.append(
+            f"touches {resource_count} resources, above the {count_limit} threshold"
+        )
+
+    if thresholds.crosses_namespace_boundary and crosses_namespace_boundary:
+        reasons.append("the blast radius crosses a namespace boundary")
+
+    promoted = Tier.MANAGER_APPROVAL if reasons else action.tier
+    tier = Tier(max(action.tier.value, promoted.value))
+
+    # A reason is reported only when a rule actually *raised* the tier. An action already
+    # declared Tier 2 is not an escalation, and labelling it as one on the card would teach
+    # an operator to read "escalated" as decoration.
+    if tier is action.tier or not reasons:
+        return tier, None
+    return tier, "; ".join(reasons)
+
+
 def effective_tier(
     action: ActionSpec,
     *,
@@ -261,28 +315,12 @@ def effective_tier(
     crosses_namespace_boundary: bool = False,
     thresholds: Thresholds | None = None,
 ) -> Tier:
-    """The tier this action runs at, after promotion.
-
-    **There is no path through this function that returns a tier below `action.tier`.** The
-    only operator is `max`, and that is deliberate: a demotion rule would let an attacker
-    who can influence a resource count lower the approval bar on a mutation.
-    """
-    thresholds = thresholds if thresholds is not None else default_catalog().thresholds
-    promoted = action.tier
-
-    cost_limit = thresholds.estimated_cost_delta_usd
-    if (
-        cost_limit is not None
-        and estimated_cost_delta_usd is not None
-        and estimated_cost_delta_usd > cost_limit
-    ):
-        promoted = Tier.MANAGER_APPROVAL
-
-    count_limit = thresholds.resource_count
-    if count_limit is not None and resource_count is not None and resource_count > count_limit:
-        promoted = Tier.MANAGER_APPROVAL
-
-    if thresholds.crosses_namespace_boundary and crosses_namespace_boundary:
-        promoted = Tier.MANAGER_APPROVAL
-
-    return Tier(max(action.tier.value, promoted.value))
+    """The tier this action runs at, after promotion. See `promote` for the reason."""
+    tier, _ = promote(
+        action,
+        estimated_cost_delta_usd=estimated_cost_delta_usd,
+        resource_count=resource_count,
+        crosses_namespace_boundary=crosses_namespace_boundary,
+        thresholds=thresholds,
+    )
+    return tier

@@ -1,0 +1,23 @@
+# W26b — who may approve what. Handoff §7's `requires_approval_from`, Idea §4.
+#
+# **Ships empty, and that is the safe default.** An empty roster refuses every approval:
+# `roster.resolve` fails closed, so an unlisted Slack user is *not* treated as an engineer.
+# The failure mode of the alternative is silent — an unknown clicker inheriting IC rights
+# is indistinguishable from a correctly-configured roster until someone audits it.
+#
+# Slack user ids, not display names: a name is re-assignable and an id is not, and this is
+# what `ApprovalRecord.approver` records for an audit to read.
+#
+# The ids are deliberately NOT committed. Set them in `.env`, which is gitignored:
+#
+#   FAZEROPS_SLACK_ENGINEERS=U01ABCDEF,U02ABCDEF
+#   FAZEROPS_SLACK_MANAGERS=U03ABCDEF
+#
+# Either source works and the environment wins, so a workspace's real ids never enter the
+# repository. Listing an id under both roles is an error rather than a promotion — see
+# `roster.py`; a person who is quietly both makes the Tier 1/Tier 2 split decorative,
+# which is precisely what Idea §3 warns about in the other direction.
+
+approvers:
+  engineers: []
+  managers: []
