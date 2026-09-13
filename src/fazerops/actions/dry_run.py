@@ -177,6 +177,50 @@ def _mask(field: str, value: Any) -> str:
 def _kubectl_diff(request: ActionRequest, spec: Any) -> DryRun:
     params = request.params
     hint = request.inverse_hint or {}
+    target = f"{params['namespace']}/configmap/{params['name']}"
+    reload_note = (
+        "Pods do not reload a mounted ConfigMap automatically; a rollout may be "
+        "required for this to take effect."
+    )
+
+    if params.get("keys") is not None:
+        # The widened form (W42 rung 1): one line per recorded key, values from the hint.
+        from .inverse import recorded_keys
+
+        recorded = recorded_keys(params, hint)
+        if recorded is None:
+            return DryRun(
+                action_id=request.action_id,
+                summary=f"Revert {len(params['keys'])} keys in ConfigMap {params['name']}",
+                target=target,
+                notes=["the recorded values do not fit these keys and this ConfigMap; this will refuse"],
+            )
+        keys, prior, current = recorded
+        return DryRun(
+            action_id=request.action_id,
+            summary=f"Revert {len(keys)} keys in ConfigMap {params['name']}",
+            target=target,
+            lines=[
+                DiffLine(
+                    field=key,
+                    before=_shown(key, current.get(key)),
+                    after=_shown(key, prior.get(key)),
+                    changed=current.get(key) != prior.get(key),
+                )
+                for key in keys
+            ],
+            notes=[reload_note],
+        )
+
+    if params.get("key") is None or params.get("target_value") is None:
+        # Reachable only once `key` is optional — a widened catalog with neither form filled.
+        return DryRun(
+            action_id=request.action_id,
+            summary=f"Revert ConfigMap {params['name']}",
+            target=target,
+            notes=["neither a key and target value nor a recorded key set was given; this will refuse"],
+        )
+
     key = params["key"]
     current = hint.get("current_value")
 
@@ -252,7 +296,53 @@ def _rds_parameter_diff(request: ActionRequest, spec: Any) -> DryRun:
     )
 
 
+def _writer_diff(request: ActionRequest, spec: Any) -> DryRun:
+    """Every writer-backed action's diff (W41). Rendered from the recorded values, never by
+    the writer — see `writers/registry.py` for why."""
+    from .writers.registry import recorded_values
+
+    values = recorded_values(request, spec)
+    if values is None:
+        # Still a card, and one that says the action will refuse. An empty diff here would
+        # read as "nothing will change", which is the most damaging thing a dry run can say.
+        return DryRun(
+            action_id=request.action_id,
+            summary=f"Restore recorded values through {spec.writer}",
+            target=", ".join(f"{k}={v}" for k, v in sorted(request.params.items())),
+            notes=["no recorded prior values fit this action and resource; it will refuse"],
+        )
+
+    resource = values.writer.resource(request.params)
+    lines = [
+        DiffLine(
+            field=field,
+            before=_shown(field, values.current.get(field)),
+            after=_shown(field, values.prior.get(field)),
+            changed=values.current.get(field) != values.prior.get(field),
+        )
+        for field in sorted(values.prior)
+    ]
+    notes = [f"Recorded values restored through the {values.writer.id} writer."]
+    if any(values.prior.get(field) is None for field in values.prior):
+        notes.append("A key shown as (absent) did not exist before the change and is removed.")
+    if values.writer.authored_by != "human":
+        notes.append("This writer was generated, not hand-written.")
+
+    return DryRun(
+        action_id=request.action_id,
+        summary=f"Restore {len(lines)} recorded value(s) in {resource.kind} {resource.name}",
+        target=resource.blast_radius_key(),
+        lines=lines,
+        notes=notes,
+    )
+
+
+def _shown(field: str, value: Any) -> str:
+    return "(absent)" if value is None else _mask(field, value)
+
+
 _RENDERERS = {
+    "writer_diff": _writer_diff,
     "kubectl_diff": _kubectl_diff,
     "helm_diff_revision": _helm_diff_revision,
     "rds_parameter_diff": _rds_parameter_diff,

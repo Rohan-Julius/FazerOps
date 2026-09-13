@@ -1,0 +1,36 @@
+# Phase G — catalog self-extension. docs/catalog_self_extension.md.
+#
+# W40's eligibility thresholds. A gap is eligible for generation only when it has been seen
+# across `min_incidents` distinct incidents AND caused by `min_distinct_actors` distinct
+# actors (§7.1). Neither may be set below 2 — `MinerThresholds` refuses it — because a
+# threshold of 1 is the configuration under which one writable ConfigMap manufactures a gap.
+#
+# Two, not higher, on purpose: gaps recur, and a system that generates from the eighth
+# occurrence is mis-designed. It should generate from the second, so that by the time the gap
+# recurs the action is merged (§2).
+
+miner:
+  min_incidents: 2
+  min_distinct_actors: 2
+
+  # §2's fourth signal: how long after a decline or a rejection a human's change to the same
+  # resource still counts as the remediation we could not perform. Long enough for an on-call
+  # to find the resource and fix it by hand; short enough that an unrelated edit next morning
+  # is not recorded as the demonstration.
+  remediation_window_minutes: 60
+
+# W45 — the provisional lifecycle (§7.8, §8). Provisional is a separate axis from tier: these
+# numbers decide when the extra manager approval stops, and never touch a declared tier.
+lifecycle:
+  # N — executions whose quiet period has fully elapsed with no human remediation observed.
+  # Approvers habituate (§10a), so this count is the weaker half; one contested execution
+  # blocks graduation however large N gets.
+  graduation_approvals: 5
+
+  # T — how long after an execution a human's change to the same resource still reads as
+  # "the action did not fix it". Matches the miner's remediation window on purpose: the same
+  # signal, pointed the other way.
+  quiet_minutes: 60
+
+  # A generated action unused across this many recent incidents is recommended for a tombstone.
+  retire_after_unused_incidents: 20

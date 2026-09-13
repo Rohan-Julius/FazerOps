@@ -44,13 +44,15 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from ..models import Tier
-from .catalog import ActionSpec, Catalog, default_catalog, validate_params
+from .catalog import ActionSpec, Catalog, ValidationRejected, default_catalog, validate_params
 
 __all__ = [
     "ActionRequest",
     "InverseUnavailable",
     "inverse",
+    "recorded_keys",
     "request_from_hint",
+    "writes",
 ]
 
 
@@ -142,7 +144,19 @@ class ActionRequest(BaseModel):
 
         from .catalog import resolve_executor
 
-        executor = resolve_executor(self.spec(catalog))
+        spec = self.spec(catalog)
+        executor = resolve_executor(spec)
+        if spec.writer is not None:
+            # A writer-backed action's target is the recorded prior value, carried on the hint
+            # rather than in its parameters, so its executor takes the whole request.
+            return executor(self, credential=credential, undo=undo, catalog=catalog)
+        import inspect
+
+        if "recorded" in inspect.signature(executor).parameters:
+            # The same reason, for an executor whose widened form restores recorded values.
+            return executor(
+                self.params, credential=credential, undo=undo, recorded=self.inverse_hint
+            )
         return executor(self.params, credential=credential, undo=undo)
 
 
@@ -163,15 +177,23 @@ def request_from_hint(
     if action_id not in catalog:
         return None
 
-    builder = _FORWARD_BUILDERS.get(action_id)
-    if builder is None:
-        return None
-
-    params = builder(hint)
+    if catalog.get(action_id).writer is not None:
+        # A writer-backed hint names its resource directly (W41). The recorded values are
+        # checked against those parameters when the inverse is built, not here.
+        params = hint.get("ref") if isinstance(hint.get("ref"), dict) else None
+    else:
+        builder = _FORWARD_BUILDERS.get(action_id)
+        params = builder(hint) if builder is not None else None
     if params is None:
         return None
 
-    return ActionRequest.for_action(action_id, params, inverse_hint=hint, catalog=catalog)
+    try:
+        return ActionRequest.for_action(action_id, params, inverse_hint=hint, catalog=catalog)
+    except ValidationRejected:
+        # A hint the catalog's schema cannot accept is an unusable hint, not an error. The
+        # audit collector records multi-key edits as `keys` hints whether or not a widened
+        # `revert_configmap_key` has been merged (W42 rung 1); until it has, this is None.
+        return None
 
 
 def inverse(request: ActionRequest, *, catalog: Catalog | None = None) -> ActionRequest | None:
@@ -185,18 +207,28 @@ def inverse(request: ActionRequest, *, catalog: Catalog | None = None) -> Action
     catalog = catalog if catalog is not None else default_catalog()
     spec = catalog.get(request.action_id)
 
-    builder = _INVERSE_BUILDERS.get(spec.inverse)
-    if builder is None:
-        return None
+    if spec.writer is not None:
+        # W41: the generic layer computes this, never the writer. Same action, recorded values
+        # swapped, so the inverse restores exactly what the collector saw before it ran.
+        from .writers.registry import invert
 
-    params = builder(request)
-    if params is None:
-        return None
+        inverted = invert(request, spec)
+        if inverted is None:
+            return None
+        inverse_id, (params, hint) = spec.id, inverted
+    else:
+        builder = _INVERSE_BUILDERS.get(spec.inverse)
+        built = builder(request) if builder is not None else None
+        if built is None:
+            return None
+        # A builder returns params alone when the recorded snapshot stays valid for the
+        # inverse, or `(params, hint)` when the inverse must carry it swapped — the multi-key
+        # form, whose targets live on the hint rather than in its parameters.
+        params, hint = built if isinstance(built, tuple) else (built, request.inverse_hint)
+        inverse_id = spec.inverse
 
     try:
-        return ActionRequest.for_action(
-            spec.inverse, params, inverse_hint=request.inverse_hint, catalog=catalog
-        )
+        return ActionRequest.for_action(inverse_id, params, inverse_hint=hint, catalog=catalog)
     except Exception:
         # A builder that produced something the schema rejects is a bug here, not a reason
         # to execute. Ground rule #4 says refuse, so `None` — and `execute()` then raises
@@ -209,15 +241,30 @@ def inverse(request: ActionRequest, *, catalog: Catalog | None = None) -> Action
 # --------------------------------------------------------------------------------------
 
 
-def _invert_configmap_key(request: ActionRequest) -> dict[str, Any] | None:
+def _invert_configmap_key(
+    request: ActionRequest,
+) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]] | None:
     """Restore the value that is current *now* — which the hint recorded at collection time.
 
     Reading the live ConfigMap here instead would race the change being reverted, and would
     make the inverse uncomputable during exactly the outage it is needed in.
+
+    The widened `keys` form (W42 rung 1) inverts by swapping the recorded values: it restores
+    every key to what it held before this action ran.
     """
+    if request.params.get("keys") is not None:
+        recorded = recorded_keys(request.params, request.inverse_hint)
+        if recorded is None:
+            return None
+        _, prior, current = recorded
+        hint = {**(request.inverse_hint or {}), "prior_values": current, "current_values": prior}
+        return dict(request.params), hint
+
     hint = request.inverse_hint or {}
     current = hint.get("current_value")
-    if current is None:
+    if current is None or request.params.get("key") is None:
+        return None
+    if request.params.get("target_value") is None:
         return None
 
     return {
@@ -272,6 +319,14 @@ _INVERSE_BUILDERS = {
 
 
 def _forward_configmap_key(hint: dict[str, Any]) -> dict[str, Any] | None:
+    if hint.get("keys"):
+        # A multi-key edit. Only the keys are parameters; the values stay on the hint, where
+        # `recorded_keys` checks them. Rejected by the schema until the widening is merged.
+        if not hint.get("namespace") or not hint.get("name"):
+            return None
+        params = {"namespace": hint["namespace"], "name": hint["name"], "keys": sorted(hint["keys"])}
+        return params if recorded_keys(params, hint) is not None else None
+
     prior = hint.get("prior_value")
     if prior is None or not hint.get("namespace") or not hint.get("name") or not hint.get("key"):
         return None
@@ -313,3 +368,69 @@ _FORWARD_BUILDERS = {
     "helm_rollback": _forward_helm_rollback,
     "restore_db_parameter": _forward_db_parameter,
 }
+
+
+# --------------------------------------------------------------------------------------
+# The widened multi-key form, and what a request writes
+# --------------------------------------------------------------------------------------
+
+
+def recorded_keys(
+    params: dict[str, Any], hint: dict[str, Any] | None
+) -> tuple[list[str], dict[str, Any], dict[str, Any]] | None:
+    """`(keys, prior_values, current_values)` for a `keys` request, or `None` if they do not fit.
+
+    Shared by the inverse, the dry run, the precondition and the executor, so the four cannot
+    disagree about when the widened form is usable. It refuses:
+
+    * a request that also names `key` or `target_value` — one form or the other, never both;
+    * values recorded on a **different ConfigMap** than the parameters name (W41's lesson:
+      without it, one resource's values could be written to another under an honest dry run);
+    * **any key set other than exactly the recorded one**. A subset would be a partial revert
+      the human never saw recorded as a unit, and a superset restores keys nobody observed.
+    """
+    hint = hint or {}
+    keys = params.get("keys")
+    if not keys or params.get("key") is not None or params.get("target_value") is not None:
+        return None
+    if hint.get("namespace") != params.get("namespace") or hint.get("name") != params.get("name"):
+        return None
+    prior, current = hint.get("prior_values"), hint.get("current_values")
+    if not isinstance(prior, dict) or not isinstance(current, dict):
+        return None
+    if set(keys) != set(prior) or set(keys) != set(current):
+        return None
+    return sorted(keys), prior, current
+
+
+def writes(
+    request: ActionRequest, *, catalog: Catalog | None = None
+) -> tuple[Any, dict[str, Any]] | None:
+    """Where executing `request` writes, and what — from parameters and recorded values, with
+    no I/O, exactly as the dry run renders it.
+
+    This is what W42's corpus-replay gate compares to what a human actually did, so it exists
+    once for every rung rather than being reconstructed per candidate. `None` for an action it
+    cannot describe as field writes (a Helm rollback replaces a whole release).
+    """
+    from .. import keys as resource_keys
+
+    catalog = catalog if catalog is not None else default_catalog()
+    spec = catalog.get(request.action_id)
+
+    if spec.writer is not None:
+        from .writers.registry import recorded_values
+
+        values = recorded_values(request, spec)
+        return None if values is None else (values.writer.resource(request.params), values.prior)
+
+    if request.action_id == "revert_configmap_key":
+        ref = resource_keys.k8s_configmap(request.params["namespace"], request.params["name"])
+        if request.params.get("keys") is not None:
+            recorded = recorded_keys(request.params, request.inverse_hint)
+            return None if recorded is None else (ref, {key: recorded[1][key] for key in recorded[0]})
+        if request.params.get("key") is None or request.params.get("target_value") is None:
+            return None
+        return ref, {request.params["key"]: request.params["target_value"]}
+
+    return None

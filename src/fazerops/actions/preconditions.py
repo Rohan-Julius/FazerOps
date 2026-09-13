@@ -113,6 +113,12 @@ def _prior_value_known(request: ActionRequest, evidence: Evidence) -> str | None
     restore. The hint is the only place a prior value can come from.
     """
     hint = request.inverse_hint or {}
+    if request.params.get("keys") is not None:
+        from .inverse import recorded_keys
+
+        if recorded_keys(request.params, hint) is None:
+            return "no prior values were captured for exactly these keys, so the change cannot be undone"
+        return None
     if hint.get("current_value") is None:
         return "no prior value was captured for this resource, so the change cannot be undone"
     return None
@@ -180,7 +186,34 @@ def _parameter_group_exists(request: ActionRequest, evidence: Evidence) -> str |
     return None
 
 
+def _writer_resource_observed(request: ActionRequest, evidence: Evidence) -> str | None:
+    """`configmap_exists`, for any writer-backed action (W41). The key comes from the writer's
+    own `resource()`, which goes through `keys.py` like every other check here."""
+    if not evidence.complete:
+        return "no resource inventory was collected, so the resource cannot be confirmed"
+
+    from .writers.registry import default_registry
+
+    writer_id = (request.inverse_hint or {}).get("writer")
+    if writer_id not in default_registry():
+        return f"no registered writer {writer_id!r} matches this action's recorded values"
+
+    key = default_registry().get(writer_id).resource(request.params).blast_radius_key()
+    if key not in evidence.resource_keys:
+        return f"no collected change touched {key}"
+    return None
+
+
+def _writer_prior_value_known(request: ActionRequest, evidence: Evidence) -> str | None:
+    prior = (request.inverse_hint or {}).get("prior")
+    if not isinstance(prior, dict) or not prior:
+        return "no prior values were captured for this resource, so the change cannot be undone"
+    return None
+
+
 CHECKS: dict[str, Callable[[ActionRequest, Evidence], str | None]] = {
+    "writer_resource_observed": _writer_resource_observed,
+    "writer_prior_value_known": _writer_prior_value_known,
     "prior_value_known": _prior_value_known,
     "configmap_exists": _configmap_exists,
     "release_exists": _release_exists,

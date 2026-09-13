@@ -49,7 +49,13 @@ CONFIG_ROOT = Path(__file__).resolve().parents[3] / "config"
 DEFAULT_ACTIONS = CONFIG_ROOT / "actions.yaml"
 DEFAULT_THRESHOLDS = CONFIG_ROOT / "thresholds.yaml"
 
-_PY_TYPES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
+_PY_TYPES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool, "list[str]": list}
+
+# What every writer-backed entry runs through (W41). Fixed, not declarable: the executor, the
+# dry run and the inverse are the generic layer's, and a writer never supplies its own.
+WRITER_EXECUTOR = "fazerops.actions.executors.writer:execute"
+WRITER_DRY_RUN = "writer_diff"
+WRITER_PRECONDITIONS = ("writer_resource_observed", "writer_prior_value_known")
 
 
 class UnknownAction(KeyError):
@@ -66,13 +72,21 @@ class ParamSpec(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    type: Literal["str", "int", "float", "bool"]
+    # `list[str]` exists for W42's rung-1 widening (a key → the keys a change touched). No
+    # shipped action declares one; the type is here so a reviewed widening can.
+    type: Literal["str", "int", "float", "bool", "list[str]"]
     required: bool = True
     enum: list[Any] | None = None
 
     @property
     def python_type(self) -> type:
         return _PY_TYPES[self.type]
+
+    @property
+    def annotation(self) -> Any:
+        """The type a response schema should declare. A bare `list` would emit an array of
+        anything, and a provider schema with untyped items admits values we then reject."""
+        return list[str] if self.type == "list[str]" else self.python_type
 
 
 class ActionSpec(BaseModel):
@@ -90,6 +104,48 @@ class ActionSpec(BaseModel):
     inverse: str
     executor: str = Field(description="`module.path:callable`, resolved at load time")
     requires_approval_from: Literal["engineer", "manager"] | None = None
+    writer: str | None = Field(
+        default=None,
+        description="`resource_type:field_path` of a registered writer (W41). An entry with a "
+        "writer is declarative: its executor, dry run and inverse are the generic layer's.",
+    )
+    provisional: bool = Field(
+        default=False,
+        description="A merged generated action (W45). A separate axis from `tier`: it never "
+        "changes the declared tier, it only adds a manager approval on top of it.",
+    )
+    retired: bool = Field(
+        default=False,
+        description="A tombstone (W45, §7.6). Still resolvable by `Catalog.get` for the incident "
+        "records that cite it; never proposable and never approvable.",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _writer_backed_entries_use_the_generic_layer(cls, data: Any) -> Any:
+        """Fill a writer-backed entry's executor, dry run and inverse — and refuse any other.
+
+        This is W41's "a writer cannot supply its own inverse or dry-run renderer" at the
+        catalog: an entry that names a writer *and* its own renderer is refused at load, so the
+        generated half of an action can never also be the half that describes it to a human.
+        """
+        if not isinstance(data, dict) or not data.get("writer"):
+            return data
+
+        action_id = data.get("id")
+        fixed = {"executor": WRITER_EXECUTOR, "dry_run": WRITER_DRY_RUN, "inverse": action_id}
+        for field, value in fixed.items():
+            given = data.get(field)
+            if given is not None and given != value:
+                raise ValueError(
+                    f"{action_id}: a writer-backed action cannot declare its own {field} "
+                    f"({given!r}) — the inverse, the dry run and the credential gate belong to "
+                    "the generic layer, never to the writer (W41)"
+                )
+
+        declared = list(data.get("preconditions") or [])
+        preconditions = declared + [name for name in WRITER_PRECONDITIONS if name not in declared]
+        return {**data, **fixed, "preconditions": preconditions}
 
     @model_validator(mode="after")
     def _tier_two_requires_a_manager(self) -> ActionSpec:
@@ -151,13 +207,21 @@ class Catalog:
         # human already waiting on an approval card.
         for action in actions:
             resolve_executor(action)
+            if action.writer is not None:
+                from .writers.registry import default_registry
+
+                default_registry().get(action.writer)  # UnknownWriter, at load
         return catalog
 
     @property
     def action_ids(self) -> tuple[str, ...]:
         """The proposer's `action_id` enum is drawn from this, so the model cannot name an
-        action that does not exist (W22, same pattern as W19b's service enum)."""
-        return tuple(sorted(self._actions))
+        action that does not exist (W22, same pattern as W19b's service enum).
+
+        **Retired actions are excluded, and only here** (W45). A tombstone must stay resolvable
+        through `get` — W28's record cites action ids — but a model must not be able to name it.
+        """
+        return tuple(sorted(a.id for a in self._actions.values() if not a.retired))
 
     def __contains__(self, action_id: object) -> bool:
         return action_id in self._actions
@@ -235,6 +299,18 @@ def validate_params(action: ActionSpec, params: dict[str, Any]) -> dict[str, Any
     for name, value in params.items():
         spec = action.params[name]
         if value is None:
+            continue
+
+        if spec.type == "list[str]":
+            # Non-empty and free of duplicates: an empty key list is an action that restores
+            # nothing while claiming to have run, and a duplicate is two writes to one key.
+            if not isinstance(value, list) or not value:
+                raise ValidationRejected(f"{action.id}.{name}: expected a non-empty list of strings")
+            if not all(isinstance(item, str) and item for item in value):
+                raise ValidationRejected(f"{action.id}.{name}: every item must be a non-empty string")
+            if len(set(value)) != len(value):
+                raise ValidationRejected(f"{action.id}.{name}: duplicate items")
+            validated[name] = list(value)
             continue
 
         # `bool` is a subclass of `int` in Python, so an unguarded isinstance check accepts

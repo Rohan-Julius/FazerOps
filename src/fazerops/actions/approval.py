@@ -28,7 +28,9 @@ Four properties hold structurally rather than by care:
 
 from __future__ import annotations
 
+import logging
 import time
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Literal
@@ -134,8 +136,27 @@ class PendingApproval(BaseModel):
     declared_tier: Tier
     tier: Tier = Field(description="After `thresholds.yaml` promotion — what the card shows.")
     escalation_reason: str | None = None
+    provisional: bool = Field(
+        default=False,
+        description="A merged generated action (W45). A separate axis from `tier`: it requires "
+        "a manager approval and never changes the tier shown or recorded.",
+    )
+    graduation: tuple[int, int] | None = Field(
+        default=None,
+        description="`(confirmed, required)` for a provisional action — the card's `generated, n/N`.",
+    )
+    one_shot: Any = Field(
+        default=None,
+        description="A W44 `OneShot`: an action built for this incident and not in the catalog. "
+        "Its writer is resolvable only inside `one_shot.context()`.",
+    )
     dry_run: DryRun
     evidence: Any = None
+    evidence_ids: tuple[str, ...] = Field(
+        default=(),
+        description="The ledger events the proposal cited. Read only by an outcome observer "
+        "(W40), never to decide what executes.",
+    )
     registered_at: float = Field(default_factory=time.time)
 
     @property
@@ -153,6 +174,10 @@ class PendingApproval(BaseModel):
     @property
     def escalated(self) -> bool:
         return self.tier > self.declared_tier
+
+    @property
+    def requires_manager(self) -> bool:
+        return self.tier is Tier.MANAGER_APPROVAL or self.provisional
 
 
 class Outcome(BaseModel):
@@ -225,6 +250,13 @@ def scope_of(request: ActionRequest) -> str:
 # cluster, and so W27's injection suite can assert *which* executor was reached.
 Runner = Callable[[ActionRequest, Any, Any], dict[str, Any]]
 
+# Told about each decision once it is recorded — never about a replay, which never reaches
+# `_record`. Phase G's gap miner listens here (W40): a rejection is the only signal of a gap
+# the model papered over instead of declining (`docs/catalog_self_extension.md` §2).
+OutcomeObserver = Callable[["PendingApproval", "Outcome"], None]
+
+logger = logging.getLogger(__name__)
+
 
 def _default_runner(request: ActionRequest, credential: Any, evidence: Any) -> dict[str, Any]:
     return request.execute(credential, evidence=evidence)
@@ -246,11 +278,17 @@ class ApprovalGateway:
         runner: Runner | None = None,
         sts_client: Any | None = None,
         role_arn: str | None = None,
+        observer: OutcomeObserver | None = None,
+        graduation: Callable[[str], tuple[int, int]] | None = None,
     ) -> None:
         self._catalog = catalog if catalog is not None else default_catalog()
         self._runner = runner if runner is not None else _default_runner
         self._sts_client = sts_client
         self._role_arn = role_arn
+        self._observer = observer
+        # W45's `growth.lifecycle.graduation_progress`. Read for the card only: whether an
+        # action is provisional comes from the catalog, never from this count.
+        self._graduation = graduation
         self._pending: dict[tuple[str, str], PendingApproval] = {}
         self._outcomes: dict[tuple[str, str], Outcome] = {}
 
@@ -265,6 +303,7 @@ class ApprovalGateway:
         estimated_cost_delta_usd: float | None = None,
         resource_count: int | None = None,
         crosses_namespace_boundary: bool = False,
+        evidence_ids: Iterable[str] = (),
     ) -> PendingApproval:
         """Compute the effective tier, render the dry run, and open the card.
 
@@ -273,6 +312,11 @@ class ApprovalGateway:
         whether it crosses a namespace — and the request only knows about one resource.
         """
         spec = self._catalog.get(request.action_id)  # UnknownAction; there is no fallback
+        if spec.retired:
+            raise ApprovalRefused(
+                f"{request.action_id} is retired. It stays resolvable for the incident records "
+                "that cite it, and is never proposed or run again (§7.6)."
+            )
         tier, reason = promote(
             spec,
             estimated_cost_delta_usd=estimated_cost_delta_usd,
@@ -294,12 +338,72 @@ class ApprovalGateway:
             escalation_reason=reason,
             dry_run=request.dry_run(evidence=evidence, catalog=self._catalog),
             evidence=evidence,
+            evidence_ids=tuple(evidence_ids),
+            provisional=spec.provisional,
+            graduation=(
+                self._graduation(spec.id)
+                if spec.provisional and self._graduation is not None
+                else None
+            ),
         )
         # Re-registering an incident/action that has already been decided would post a fresh
         # card for a mutation that already ran. The idempotency table is the authority.
         if pending.key in self._outcomes:
             raise AlreadyDecided(self._outcomes[pending.key])
 
+        self._pending[pending.key] = pending
+        return pending
+
+    def register_one_shot(
+        self,
+        one_shot: Any,
+        *,
+        evidence: Any = None,
+        evidence_ids: Iterable[str] = (),
+    ) -> PendingApproval:
+        """Open the card for a W44 one-shot, keyed on `(incident, resource, field)`.
+
+        The idempotency key is `(incident_id, action_id)` as for every action, and that is only
+        the triple §7.5 requires because the id is **recomputed here** from the resource the
+        request names and the writer's field — a one-shot whose id was minted any other way is
+        refused, so two generations for one resource cannot open two cards that each execute.
+        """
+        from .growth.one_shot import one_shot_action_id
+
+        request = one_shot.request
+        if request.action_id in self._catalog:
+            raise ApprovalRefused(f"{request.action_id} is a catalog action; a one-shot may not shadow one")
+        expected = one_shot_action_id(
+            one_shot.writer.resource(request.params).blast_radius_key(), one_shot.writer.field_path
+        )
+        if request.action_id != expected or one_shot.key.action_id != expected:
+            raise ApprovalRefused(
+                f"{request.action_id} is not keyed on the resource and field it restores; a one-shot "
+                "is keyed on (incident, resource, field), never on a per-generation id (§7.5)"
+            )
+        if not one_shot.containment.contained:
+            raise ApprovalRefused(
+                f"{request.action_id} was not contained in its sandbox ({one_shot.containment.verdict.value}); "
+                "only a contained one-shot reaches a human (§6)"
+            )
+
+        catalog = one_shot.catalog(self._catalog)
+        spec = catalog.get(request.action_id)
+        with one_shot.context():
+            dry_run = request.dry_run(evidence=evidence, catalog=catalog)
+
+        pending = PendingApproval(
+            incident_id=one_shot.key.incident_id,
+            request=request,
+            declared_tier=spec.tier,
+            tier=spec.tier,
+            dry_run=dry_run,
+            evidence=evidence,
+            evidence_ids=tuple(evidence_ids),
+            one_shot=one_shot,
+        )
+        if pending.key in self._outcomes:
+            raise AlreadyDecided(self._outcomes[pending.key])
         self._pending[pending.key] = pending
         return pending
 
@@ -348,12 +452,21 @@ class ApprovalGateway:
             return self._record(pending, approver, decision="rejected")
 
         # 2. Tier routing (W26b). Raises rather than recording — see `ApproverNotPermitted`.
-        if not approver.role.clears(pending.tier):
+        #    A provisional action (W45) routes here too, without its tier changing.
+        if pending.requires_manager and approver.role is not ApproverRole.MANAGER:
+            if pending.provisional and pending.tier is not Tier.MANAGER_APPROVAL:
+                why = (
+                    " It is a provisional generated action, which needs a manager approval "
+                    "every time until it graduates (W45)."
+                )
+            elif pending.escalation_reason:
+                why = f" It escalated because {pending.escalation_reason}."
+            else:
+                why = ""
             raise ApproverNotPermitted(
                 f"{action_id} runs at tier {int(pending.tier)} and requires a "
                 f"{ApproverRole.MANAGER.value} approval; {approver.user_id} is "
-                f"{approver.role.value}."
-                + (f" It escalated because {pending.escalation_reason}." if pending.escalation_reason else "")
+                f"{approver.role.value}." + why
             )
 
         # 3. Mint. This module is allowlisted in `credentials.MINTING_MODULES`; the call is
@@ -368,7 +481,7 @@ class ApprovalGateway:
         )
 
         try:
-            result = self._runner(pending.request, credential, pending.evidence)
+            result = self._run(pending, credential)
         except Exception as exc:
             # Recorded as a decision even though it failed, so a retry does not re-run a
             # mutation that may have partially landed. A failed mutation that has to be
@@ -380,6 +493,17 @@ class ApprovalGateway:
         return self._record(pending, approver, decision="approved", result=result)
 
     # -- internals ---------------------------------------------------------------------
+
+    def _run(self, pending: PendingApproval, credential: Any) -> dict[str, Any]:
+        if pending.one_shot is None:
+            return self._runner(pending.request, credential, pending.evidence)
+        # A one-shot's action and writer exist only for this block.
+        with pending.one_shot.context():
+            if self._runner is not _default_runner:
+                return self._runner(pending.request, credential, pending.evidence)
+            return pending.request.execute(
+                credential, evidence=pending.evidence, catalog=pending.one_shot.catalog(self._catalog)
+            )
 
     def _record(
         self,
@@ -406,4 +530,23 @@ class ApprovalGateway:
         # The card is closed either way. Leaving it pending after a decision would let a
         # later click find an open approval for an action that has already run.
         self._pending.pop(pending.key, None)
+        self._notify(pending, outcome)
         return outcome
+
+    def _notify(self, pending: PendingApproval, outcome: Outcome) -> None:
+        """Tell the observer, and never let it change the answer.
+
+        The outcome is already recorded when this runs. An observer that raised through
+        `decide()` would make an executed mutation look like a failed call — and a failed
+        call is what a caller retries.
+        """
+        if self._observer is None:
+            return
+        try:
+            self._observer(pending, outcome)
+        except Exception:
+            logger.exception(
+                "outcome observer failed for %s on %s; the decision stands",
+                outcome.action_id,
+                outcome.incident_id,
+            )

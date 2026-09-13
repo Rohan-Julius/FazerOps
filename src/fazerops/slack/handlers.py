@@ -255,6 +255,13 @@ def approval_card_for(pending: Any) -> list[dict[str, Any]]:
         incident_id=pending.incident_id,
         tier=pending.tier,
         escalation_reason=pending.escalation_reason,
+        provisional=pending.provisional,
+        graduation=pending.graduation,
+        one_shot=(
+            None
+            if pending.one_shot is None
+            else ("human-written" if pending.one_shot.authored_by == "human" else "generated")
+        ),
     )
 
 

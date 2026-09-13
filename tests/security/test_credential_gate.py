@@ -234,6 +234,10 @@ def test_every_executor_calls_the_gate():
         checked.append(path.name)
 
     assert "configmap.py" in checked, "W24's executor must be covered by this assertion"
+    # W41: every writer-backed action — generated writers included — executes through this
+    # one file, so covering it is how writers inherit the gate. `test_writer_registry.py`
+    # asserts the gate is called before the writer is.
+    assert "writer.py" in checked, "W41's generic executor must be covered by this assertion"
 
 
 # --------------------------------------------------------------------------------------

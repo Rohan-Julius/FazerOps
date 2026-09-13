@@ -128,7 +128,7 @@ def _wire_params_model() -> type[BaseModel]:
             # omit it, and `gemini-3.5-flash-lite` then filled one parameter of four on most
             # runs (12 Sep, two recorded rounds). Required-and-nullable forces it to emit
             # every key and make an explicit decision about each.
-            fields.setdefault(parameter, (spec.python_type | None, ...))
+            fields.setdefault(parameter, (spec.annotation | None, ...))
 
     return create_model("_WireParams", **fields)
 
@@ -427,8 +427,16 @@ async def _invoke(provider, model: str, messages: list[dict]) -> tuple[dict, dic
 # --------------------------------------------------------------------------------------
 
 
-def proposer_node(state: Any) -> Any:
+def proposer_node(state: Any, *, signals: Any | None = None, one_shots: Any | None = None) -> Any:
     """Build the graph's proposer node for an `InvestigationState`.
+
+    `signals`, when given, is a `GapSignalStore` (W40). A `"none"` answer is then handed to
+    `growth.signals.record_decline`, which decides in Python — from the brief, not from the
+    response — whether the decline is a catalog gap (`docs/catalog_self_extension.md` §4).
+    `one_shots`, a `growth.one_shot.OneShotBook` (W44), is offered the same brief after the same
+    decline and leaves its outcome on `state.one_shot`, for a human — never for the proposer.
+    The model's vocabulary does not change: it still names a catalog action or `"none"`, and
+    nothing it emits reaches the gap miner or the one-shot path. Bind it with `functools.partial`.
 
     Lives here rather than in `graph.py` because it reads the action catalog, and
     `graph.py` is investigation-layer: a graph module importing this one would be the seam
@@ -450,6 +458,24 @@ def proposer_node(state: Any) -> Any:
             state.node_errors["proposer"] = str(exc)
             return "proposal rejected"
         if state.proposal is None:
+            if signals is not None:
+                try:
+                    from ..actions.growth.signals import record_decline
+
+                    record_decline(brief, signals)
+                except Exception:
+                    # The brief is complete and correct without this; losing one gap signal
+                    # must not degrade it, and the node never raises.
+                    import logging
+
+                    logging.getLogger(__name__).exception("could not record a decline signal")
+            if one_shots is not None:
+                try:
+                    state.one_shot = await one_shots.offer(brief)
+                except Exception:
+                    import logging
+
+                    logging.getLogger(__name__).exception("the one-shot path failed; the brief stands")
             return "no action proposed"
         return f"proposed {state.proposal.action_id}"
 

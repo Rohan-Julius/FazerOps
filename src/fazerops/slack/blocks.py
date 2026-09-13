@@ -140,8 +140,17 @@ def approval_card(
     incident_id: str,
     tier: Tier,
     escalation_reason: str | None = None,
+    provisional: bool = False,
+    graduation: tuple[int, int] | None = None,
+    one_shot: str | None = None,
 ) -> list[dict[str, Any]]:
     """The approval card. Handoff §9's four required elements, in its order.
+
+    `one_shot` is W44's: `"human-written"` or `"generated"` for an action built for this incident
+    and never added to the catalog, which the card says in so many words.
+
+    `provisional` and `graduation` are W45's: a generated action says so on the card, with how
+    far it is from graduating, beside — never instead of — its tier.
 
     `tier` is passed in rather than read from the catalog here, because it is the
     *effective* tier after `thresholds.yaml` promotion (W26) — a card that displayed the
@@ -180,6 +189,35 @@ def approval_card(
 
     blocks.append({"type": "context", "elements": [_mrkdwn(_tier_line(tier, escalation_reason))]})
 
+    if provisional:
+        progress = f"generated, {graduation[0]}/{graduation[1]}" if graduation else "generated"
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    _mrkdwn(
+                        f":seedling: *Provisional* ({progress}) — this action was generated from "
+                        "production evidence and needs a manager approval every time until it "
+                        "graduates."
+                    )
+                ],
+            }
+        )
+
+    if one_shot:
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    _mrkdwn(
+                        f":zap: *One-shot* ({_escape(one_shot)} writer) — built for this incident only and not "
+                        "in the catalog. It was run in a sandbox first and touched nothing but the resource "
+                        "above; a manager approves it every time."
+                    )
+                ],
+            }
+        )
+
     for note in dry_run.notes:
         blocks.append({"type": "context", "elements": [_mrkdwn(f":information_source: {_escape(note)}")]})
 
@@ -192,7 +230,7 @@ def approval_card(
                 incident_id,
                 dry_run.action_id,
                 include_show_all=False,
-                approve_style="danger" if tier is Tier.MANAGER_APPROVAL else "primary",
+                approve_style="danger" if tier is Tier.MANAGER_APPROVAL or provisional or one_shot else "primary",
             )
         )
 

@@ -142,7 +142,10 @@ class K8sAuditCollector(BaseCollector):
                     continue
 
                 key = _object_key(entry)
-                if key and self._is_recordable(entry) and _object_data(entry.get("responseObject")):
+                stored = entry.get("responseObject")
+                if key and self._is_recordable(entry) and (
+                    _object_data(stored) or _object_map(stored, "binaryData")
+                ):
                     anchors[key] = entry
 
         yield from anchors.values()
@@ -154,6 +157,7 @@ class K8sAuditCollector(BaseCollector):
 
         self._prior_state = {}
         seen_state: dict[tuple[str, str, str], dict[str, Any]] = {}
+        seen_binary: dict[tuple[str, str, str], dict[str, Any]] = {}
 
         for item in ordered:
             if not self._is_recordable(item):
@@ -164,11 +168,31 @@ class K8sAuditCollector(BaseCollector):
             if key in seen_state:
                 # Snapshot what this object looked like *before* the current entry.
                 item["_prior_data"] = seen_state[key]
+            if key in seen_binary:
+                item["_prior_binary_data"] = seen_binary[key]
             stored = _object_data(item.get("responseObject"))
             if stored is not None:
                 seen_state[key] = stored
+            binary = _object_map(item.get("responseObject"), "binaryData")
+            if binary is not None:
+                seen_binary[key] = binary
 
         return ordered
+
+    def normalize_entries(self, raw_items: list[dict[str, Any]]) -> list[tuple[dict[str, Any], ChangeEvent]]:
+        """Prepare and normalize raw audit entries, pairing each event with its entry.
+
+        The live and fixture paths reach this through `fetch`, which is radius-scoped. W43's
+        containment check needs the same normalization over entries it selected itself — every
+        request one sandbox principal made, wherever it landed — so it is exposed here rather
+        than restated there, where it could drift from what this collector records.
+        """
+        pairs = []
+        for item in self._prepare(list(raw_items)):
+            event = self._normalize(item)
+            if event is not None:
+                pairs.append((item, event))
+        return pairs
 
     def _is_recordable(self, raw: dict[str, Any]) -> bool:
         if raw.get("stage") != TERMINAL_STAGE:
@@ -227,6 +251,11 @@ class K8sAuditCollector(BaseCollector):
         after = _object_data(raw.get("responseObject"))
         before = raw.get("_prior_data")
 
+        if kind == "ConfigMap":
+            binary = _binary_data_diff(raw, data_before=before, data_after=after)
+            if binary is not None:
+                return binary
+
         if after is None and before is None:
             return None  # a Metadata-level entry; the policy did not capture bodies
 
@@ -255,10 +284,28 @@ class K8sAuditCollector(BaseCollector):
             return False, None
         if diff is None or not diff.prior_value_captured or not diff.fields_changed:
             return False, None
+        if diff.field_path == "binaryData":
+            # No shipped action restores a binary map, so there is nothing to hint at. The
+            # recorded before and after are what Phase G mines this change class from.
+            return False, None
 
         changed = diff.fields_changed
         if len(changed) != 1:
-            return False, None  # multi-key edits are out of scope for the single action
+            # Several keys at once. The hint records every changed key's prior and current
+            # value, so an action that restores them together can be built from it — but the
+            # shipped `revert_configmap_key` takes one key, so `reversible` stays False. It
+            # reaches the model and the brief, and must not claim what the shipped catalog
+            # cannot do. Whether any action consumes this hint is `actions/inverse.py`'s call
+            # (plan §3.5), which is how W42's rung-1 widening becomes usable once merged
+            # without this collector changing again.
+            return False, {
+                "action_id": "revert_configmap_key",
+                "namespace": resource.namespace,
+                "name": resource.name,
+                "keys": changed,
+                "prior_values": {name: (diff.before or {}).get(name) for name in changed},
+                "current_values": {name: (diff.after or {}).get(name) for name in changed},
+            }
 
         key = changed[0]
         return True, {
@@ -285,7 +332,38 @@ def _object_key(raw: dict[str, Any]) -> tuple[str, str, str] | None:
 
 
 def _object_data(obj: Any) -> dict[str, Any] | None:
+    return _object_map(obj, "data")
+
+
+def _object_map(obj: Any, field: str) -> dict[str, Any] | None:
     if not isinstance(obj, dict):
         return None
-    data = obj.get("data")
-    return data if isinstance(data, dict) else None
+    value = obj.get(field)
+    return value if isinstance(value, dict) else None
+
+
+def _binary_data_diff(
+    raw: dict[str, Any], *, data_before: dict[str, Any] | None, data_after: dict[str, Any] | None
+) -> Diff | None:
+    """A ConfigMap's `binaryData` diff, when that map — and not `data` — is what changed.
+
+    One audit entry is one ledger event, and a `Diff` is over one map. So an update that
+    changes both maps records the `data` diff as it always has, and its `binaryData` change is
+    not recorded: the recorded `data` diff is what the demo and every hint already rely on.
+    """
+    after = _object_map(raw.get("responseObject"), "binaryData")
+    before = raw.get("_prior_binary_data")
+    if before is None and after is None:
+        return None
+
+    binary = Diff(before=before, after=after, prior_value_captured=before is not None, field_path="binaryData")
+    data_changed = (data_before is not None or data_after is not None) and bool(
+        Diff(before=data_before, after=data_after).fields_changed
+    )
+    if data_changed or not binary.fields_changed:
+        return None
+    if before is None and (data_before is not None or data_after is not None):
+        # First sight of a ConfigMap that carries both maps: nothing was compared, so the
+        # `data` path reports it exactly as before rather than claiming a binary change.
+        return None
+    return binary

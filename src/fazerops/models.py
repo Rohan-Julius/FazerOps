@@ -148,6 +148,12 @@ class Diff(BaseModel):
         default=True,
         description="False renders as 'new value; prior value not captured' (plan §3.6)",
     )
+    field_path: str | None = Field(
+        default=None,
+        description="Which map of the object the diff is over, when a source records more "
+        "than one. The audit collector sets `binaryData` for a ConfigMap's binary map and "
+        "leaves `data` implicit. Structural, never projected into model context.",
+    )
 
     @property
     def fields_changed(self) -> list[str]:

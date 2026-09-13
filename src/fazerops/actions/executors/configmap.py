@@ -39,8 +39,14 @@ def revert_key(
     credential: Any = None,
     undo: Any = None,
     client: Any = None,
+    recorded: Any = None,
 ) -> dict[str, Any]:
-    """Patch one ConfigMap key to `target_value`.
+    """Patch one ConfigMap key to `target_value` — or, in the widened form, every recorded key.
+
+    `recorded` is the request's hint. The widened `keys` form (W42 rung 1) takes its target
+    values from it rather than from parameters, so a model never supplies a value, and it is
+    checked with the same `recorded_keys` the inverse and the dry run use **before** the
+    credential is spent: a refusal here must not burn an approval.
 
     `undo` arrives already computed — `ActionRequest.execute()` refuses to call this at all
     when the inverse is `None`, so an executor never has to decide whether it is safe to
@@ -53,6 +59,32 @@ def revert_key(
     """
     namespace = params["namespace"]
     name = params["name"]
+
+    if params.get("keys") is not None:
+        from ..inverse import recorded_keys
+
+        found = recorded_keys(params, recorded)
+        if found is None:
+            raise ValueError(
+                "revert_configmap_key: the recorded values do not fit these keys and this "
+                "ConfigMap; refusing (ground rule #4)"
+            )
+        keys, prior, _ = found
+        require_actor_credential(credential, action_id="revert_configmap_key", namespace=namespace)
+        client = client if client is not None else _core_v1()
+        patched = client.patch_namespaced_config_map(
+            name=name, namespace=namespace, body={"data": {k: prior[k] for k in keys}}
+        )
+        # Key names only, never values — the widened form restores values the card masked.
+        return {
+            "action_id": "revert_configmap_key",
+            "namespace": namespace,
+            "name": name,
+            "keys": keys,
+            "resource_version": patched.metadata.resource_version,
+            "inverse": None if undo is None else {"action_id": undo.action_id, "params": undo.params},
+        }
+
     key = params["key"]
     target_value = params["target_value"]
 

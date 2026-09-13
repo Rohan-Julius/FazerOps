@@ -86,6 +86,9 @@ class InvestigationState:
         self.results: list[CollectorResult] = []
         self.narrative: Any | None = None
         self.proposal: Any | None = None
+        # Set by an injected proposer node after a decline (Phase G, W44). Opaque here, like the
+        # proposal: the investigation layer carries it and never reads it.
+        self.one_shot: Any | None = None
         self.node_errors: dict[str, str] = {}
 
     @property
