@@ -140,6 +140,13 @@ def test_dotenv_is_gitignored():
     assert result.returncode == 0, "git does not actually ignore .env"
 
 
+def test_fazerops_state_is_gitignored():
+    """`.gitleaks.toml` allowlists `.fazerops/demo-world/`, where the demo's k3d client keys live.
+    That entry is only safe while the state directory is never committed."""
+    result = subprocess.run(["git", "check-ignore", "-q", ".fazerops/demo-world/priya.key"], cwd=REPO_ROOT)
+    assert result.returncode == 0, ".fazerops/ must be gitignored: it holds real k3d client keys"
+
+
 def test_ds_store_is_gitignored():
     """It is untracked right now and would be swept into the first commit otherwise."""
     result = subprocess.run(["git", "check-ignore", "-q", ".DS_Store"], cwd=REPO_ROOT)

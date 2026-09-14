@@ -26,6 +26,13 @@ paths = [
   # into `fixtures/` without stripping it — W7b takes only the six demo events.
   '''\.k3d/''',
 
+  # `scripts/demo_world.py` mints client certificates for its three k3d identities (priya, arun,
+  # dinesh) through the cluster's CSR API and keeps the keys in `.fazerops/demo-world/`. Real keys,
+  # like `.k3d/` above — but only for the throwaway local cluster, regenerated when missing, and the
+  # directory is gitignored (`tests/test_no_secrets.py::test_fazerops_state_is_gitignored` fails if
+  # that rule is ever removed). First surfaced 14 Sep, the day the demo story ran live.
+  '''\.fazerops/demo-world/''',
+
   # `.env` holds real credentials — a Gemini API key, and Slack tokens later. That is what
   # the file is *for*, and it is gitignored, so nothing in it can reach a commit. Like
   # `.k3d/` above it only surfaces under `gitleaks detect --no-git`, which scans the
