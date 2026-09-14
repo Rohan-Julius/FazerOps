@@ -251,20 +251,7 @@ def _observers(first: Callable[[PendingApproval, Any], Any], hooks: list[Callabl
 
 
 def _request_for(proposal: Any, brief: Brief) -> Any:
-    """The proposal as an executable request, carrying the hint its cited change recorded.
+    """The proposal as an executable request (`inverse.request_for_proposal`)."""
+    from .inverse import request_for_proposal
 
-    The hint is taken from the ledger's event, never from the proposal: it holds the prior and
-    current values the inverse and the dry run are computed from.
-    """
-    from .inverse import ActionRequest
-
-    events = {candidate.event.id: candidate.event for candidate in brief.candidates}
-    hint = next(
-        (
-            events[event_id].inverse_hint
-            for event_id in proposal.evidence_ids
-            if event_id in events and (events[event_id].inverse_hint or {}).get("action_id") == proposal.action_id
-        ),
-        None,
-    )
-    return ActionRequest.for_action(proposal.action_id, dict(proposal.params), inverse_hint=hint)
+    return request_for_proposal(proposal, brief.candidates)

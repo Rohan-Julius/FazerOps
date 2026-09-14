@@ -427,6 +427,25 @@ async def _invoke(provider, model: str, messages: list[dict]) -> tuple[dict, dic
 # --------------------------------------------------------------------------------------
 
 
+def unexecutable_reason(proposal: Proposal, brief: Brief) -> str | None:
+    """Why a validated proposal could never execute, or `None` if its inverse can be computed.
+
+    Uses the hint of the change the proposal cites, exactly as the gateway will. `validate_proposal`
+    checks the params against the catalog; it cannot see that they ask a one-key revert of a change
+    recorded as several keys, whose hint holds no single prior value.
+    """
+    from ..actions.catalog import ValidationRejected
+    from ..actions.inverse import inverse, request_for_proposal
+
+    try:
+        request = request_for_proposal(proposal, brief.candidates)
+    except ValidationRejected as exc:
+        return str(exc)
+    if inverse(request) is None:
+        return "no inverse can be computed from the change it cites, so it could never be approved (ground rule #4)"
+    return None
+
+
 def proposer_node(state: Any, *, signals: Any | None = None, one_shots: Any | None = None) -> Any:
     """Build the graph's proposer node for an `InvestigationState`.
 
@@ -457,6 +476,14 @@ def proposer_node(state: Any, *, signals: Any | None = None, one_shots: Any | No
         except ProposalRejected as exc:
             state.node_errors["proposer"] = str(exc)
             return "proposal rejected"
+        if state.proposal is not None:
+            reason = unexecutable_reason(state.proposal, brief)
+            if reason is not None:
+                # Ground rule #4 makes this a decline, not a proposal: a card for it could never be
+                # approved. Found live 14 Sep — a model offered a one-key revert of a two-key edit,
+                # and the gap signal and one-shot, which fire only on a decline, never did.
+                state.node_errors["proposer"] = f"proposed {state.proposal.action_id}, handled as a decline: {reason}"
+                state.proposal = None
         if state.proposal is None:
             if signals is not None:
                 try:

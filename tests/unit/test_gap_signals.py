@@ -377,6 +377,52 @@ async def test_the_proposer_node_records_the_decline_it_observes(monkeypatch):
     assert signal.incident_id == brief.incident_id
 
 
+def test_a_one_key_revert_of_a_multi_key_change_cannot_execute():
+    from fazerops.agents.proposer import unexecutable_reason
+    from fazerops.models import Proposal
+
+    change = multi_key_change("evt-1", at=CAUSE_AT)
+    proposal = Proposal(
+        action_id="revert_configmap_key",
+        params={"namespace": change.resource.namespace, "name": change.resource.name, "key": "session.ttl", "target_value": "3600"},
+        rationale="restore the session length",
+        evidence_ids=["evt-1"],
+    )
+
+    assert "no inverse" in unexecutable_reason(proposal, brief_for("INC-1", change))
+
+
+async def test_the_demo_proposal_is_executable(demo_brief):
+    from fazerops.agents.proposer import propose, unexecutable_reason
+
+    proposal = await propose(demo_brief)
+    assert proposal is not None and unexecutable_reason(proposal, demo_brief) is None
+
+
+async def test_an_unexecutable_proposal_is_recorded_as_the_decline_it_is(monkeypatch):
+    """Found live 14 Sep: Gemini proposed a one-key revert of a two-key edit. The card had no
+    Approve, and because the node saw a proposal rather than a decline, no gap was recorded and no
+    one-shot was offered — the growth path stopped with nothing to say why."""
+    import fazerops.agents.proposer as proposer_module
+    from fazerops.agents.graph import investigate_via_graph
+    from fazerops.ingest.alerts import normalize_alert
+
+    monkeypatch.setenv("FAZEROPS_MODE", "fixture")
+    monkeypatch.setenv("FAZEROPS_LLM", "stub")
+    monkeypatch.setattr(proposer_module, "unexecutable_reason", lambda proposal, brief: "no inverse")
+    monkeypatch.setattr(signals_module, "catalog_can_revert", lambda event: False)
+    store = GapSignalStore()
+
+    payload = json.loads((FIXTURE_ALERTS / "alertmanager.json").read_text(encoding="utf-8"))
+    brief, _ = await investigate_via_graph(
+        normalize_alert(payload),
+        proposer_node=functools.partial(proposer_module.proposer_node, signals=store),
+    )
+
+    [signal] = store.signals()
+    assert signal.kind is SignalKind.DECLINE and signal.event_id == brief.top.event.id
+
+
 async def test_a_failing_signal_store_costs_the_brief_nothing(monkeypatch):
     class Broken(GapSignalStore):
         def record(self, signal):

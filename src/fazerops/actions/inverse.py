@@ -51,6 +51,7 @@ __all__ = [
     "InverseUnavailable",
     "inverse",
     "recorded_keys",
+    "request_for_proposal",
     "request_from_hint",
     "writes",
 ]
@@ -194,6 +195,25 @@ def request_from_hint(
         # audit collector records multi-key edits as `keys` hints whether or not a widened
         # `revert_configmap_key` has been merged (W42 rung 1); until it has, this is None.
         return None
+
+
+def request_for_proposal(proposal: Any, candidates: Any, *, catalog: Catalog | None = None) -> ActionRequest:
+    """A proposal as an executable request, carrying the hint its cited change recorded.
+
+    The hint is taken from the cited event, never from the proposal: it holds the prior and
+    current values the inverse and the dry run are computed from. Raises `ValidationRejected`
+    for params the catalog does not accept.
+    """
+    events = {candidate.event.id: candidate.event for candidate in candidates}
+    hint = next(
+        (
+            events[event_id].inverse_hint
+            for event_id in proposal.evidence_ids
+            if event_id in events and (events[event_id].inverse_hint or {}).get("action_id") == proposal.action_id
+        ),
+        None,
+    )
+    return ActionRequest.for_action(proposal.action_id, dict(proposal.params), inverse_hint=hint, catalog=catalog)
 
 
 def inverse(request: ActionRequest, *, catalog: Catalog | None = None) -> ActionRequest | None:
