@@ -358,9 +358,13 @@ def _commit(repo: Path, message: str, *, agent: bool) -> str:
 @pytest.fixture
 def repo(tmp_path):
     root = tmp_path / "repo"
-    for relative in ("config/actions.yaml", "src/fazerops/security/credentials.py"):
+    # The catalog is the pinned one (`tests/conftest.py`), like every other catalog the suite reads.
+    for relative, source in (
+        ("config/actions.yaml", DEFAULT_ACTIONS),
+        ("src/fazerops/security/credentials.py", REPO_ROOT / "src/fazerops/security/credentials.py"),
+    ):
         (root / relative).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(REPO_ROOT / relative, root / relative)
+        shutil.copy(source, root / relative)
     _run(root, "init", "-q")
     _run(root, "checkout", "-q", "-b", "main")
     _commit(root, "chore: base", agent=False)
