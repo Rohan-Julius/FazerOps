@@ -33,6 +33,7 @@ from ..ledger.chain import LedgerIntegrityError
 from ..ledger.store import LedgerStore
 from ..models import Alert, Brief
 from .approval import ApprovalGateway, ApprovalRefused, PendingApproval
+from .decision_log import DecisionLog
 from .growth.lifecycle import graduation_progress
 from .growth.one_shot import OneShotBook, OneShotOutcome
 from .growth.signals import GapSignalStore, outcome_observer
@@ -65,6 +66,16 @@ class Automation:
     gateway: ApprovalGateway
     one_shots: OneShotBook
     state_dir: Path
+    # B1: every click and `/fazerops` command, refusals included (`decision_log.py`).
+    decisions: DecisionLog | None = None
+    # In memory for the gateway's reason: open cards die with the process, and so does what they
+    # were drafted from. `/fazerops` reads these (B2); the incident record is built from them (B3).
+    briefs: dict[str, Brief] = field(default_factory=dict)
+    proposals: dict[str, Any] = field(default_factory=dict)
+    threads: dict[str, tuple[str, str]] = field(default_factory=dict)
+    cards: dict[tuple[str, str], tuple[str, str]] = field(default_factory=dict)
+    # Called with `(pending, outcome)` after the gateway records a decision — never on a replay.
+    decided_hooks: list[Callable[[PendingApproval, Any], Any]] = field(default_factory=list)
 
     @classmethod
     def assemble(
@@ -82,16 +93,25 @@ class Automation:
         root = Path(state_dir or os.environ.get(STATE_DIR_ENV) or DEFAULT_STATE_DIR)
         ledger = LedgerStore(root / "ledger.jsonl")
         signals = GapSignalStore(root / "gap_signals.jsonl")
+        hooks: list[Callable[[PendingApproval, Any], Any]] = []
         gateway = ApprovalGateway(
             catalog=catalog,
             runner=runner,
             sts_client=sts_client,
             role_arn=role_arn,
-            observer=outcome_observer(signals, ledger),
+            observer=_observers(outcome_observer(signals, ledger), hooks),
             graduation=graduation_progress(signals, ledger),
         )
         one_shots = OneShotBook(catalog=catalog, sandbox=sandbox, meter=meter, cassette_directory=cassette_directory)
-        return cls(ledger=ledger, signals=signals, gateway=gateway, one_shots=one_shots, state_dir=root)
+        return cls(
+            ledger=ledger,
+            signals=signals,
+            gateway=gateway,
+            one_shots=one_shots,
+            state_dir=root,
+            decisions=DecisionLog(root / "decisions.jsonl"),
+            decided_hooks=hooks,
+        )
 
     def proposer_node(self, state: Any) -> Any:
         from ..agents.proposer import proposer_node
@@ -127,6 +147,7 @@ class Automation:
             # The brief is Tier 0 and still posts. A ledger that cannot be appended to honestly
             # (signed, and this process lacks the key) is refused loudly, not silently unsigned.
             response.refused.append(f"not recorded in the ledger: {exc}")
+        self._remember(brief, response.proposal)
         evidence = Evidence.from_brief(brief)
 
         if response.proposal is not None:
@@ -181,9 +202,52 @@ class Automation:
                     self.ledger.extend(c.event for c in update.brief.candidates if c.event.id in late)
                 except LedgerIntegrityError:
                     logger.exception("late changes for %s were not recorded in the ledger", brief.incident_id)
+            self.briefs[update.brief.incident_id] = update.brief
             on_update(update)
             latest = update.brief
         return latest
+
+    def incident_session(self, pending: PendingApproval, outcome: Any) -> Any:
+        """The `IncidentSession` for a recorded decision (B3), or `None` for an incident this process
+        did not investigate. Built from what the process holds, never from the Slack payload."""
+        from ..models import Proposal
+        from ..record.session import IncidentSession
+
+        brief = self.briefs.get(outcome.incident_id)
+        if brief is None:
+            return None
+        proposal = self.proposals.get(outcome.incident_id)
+        session = IncidentSession.from_brief(brief, proposal=proposal if isinstance(proposal, Proposal) else None)
+        session = session.with_approval(outcome.approval_record())
+        inverse = outcome.result.get("inverse") if isinstance(outcome.result, dict) else None
+        execution = outcome.execution_record(inverse=inverse if isinstance(inverse, dict) else None)
+        return session if execution is None else session.with_execution(execution)
+
+    def _remember(self, brief: Brief, proposal: Any) -> None:
+        self.briefs[brief.incident_id] = brief
+        if proposal is not None:
+            self.proposals[brief.incident_id] = proposal
+        # Bounded: a long-running server sees many incidents, and only recent ones are ever asked about.
+        for store in (self.briefs, self.proposals):
+            while len(store) > MAX_REMEMBERED:
+                store.pop(next(iter(store)))
+
+
+MAX_REMEMBERED = 500
+
+
+def _observers(first: Callable[[PendingApproval, Any], Any], hooks: list[Callable[[PendingApproval, Any], Any]]):
+    """One gateway observer that tells the growth observer and then every hook. Each is isolated: a
+    record upload that fails must not stop the gap miner hearing about the outcome, or vice versa."""
+
+    def observe(pending: PendingApproval, outcome: Any) -> None:
+        for hook in (first, *hooks):
+            try:
+                hook(pending, outcome)
+            except Exception:  # noqa: BLE001 - the decision is already recorded
+                logger.exception("an outcome hook failed for %s on %s", outcome.action_id, outcome.incident_id)
+
+    return observe
 
 
 def _request_for(proposal: Any, brief: Brief) -> Any:

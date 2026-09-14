@@ -28,7 +28,7 @@ from fastapi.responses import JSONResponse
 
 from .runtime import Automation, Response
 
-__all__ = ["build_app", "messages_for", "serve"]
+__all__ = ["ACTOR_ROLE_ENV", "assemble_from_env", "build_app", "decision_closer", "messages_for", "record_poster", "serve"]
 
 Post = Callable[..., Any]
 Update = Callable[..., Any]
@@ -49,16 +49,34 @@ def messages_for(response: Response) -> list[tuple[list[dict[str, Any]], str]]:
     return messages
 
 
-def _brief_message(response: Response, brief: Any) -> tuple[list[dict[str, Any]], str]:
-    from ..slack.blocks import change_brief
+def _brief_message(response: Response, brief: Any, automation: Any = None) -> tuple[list[dict[str, Any]], str]:
+    """The brief's blocks. When `automation` shows its proposal already decided, the Approve and
+    Reject are replaced by the outcome line — a re-render must never hand a decided action its
+    buttons back."""
+    from ..slack.blocks import change_brief, close_decision
 
     catalog_card = next((p for p in response.pending if p.one_shot is None), None)
     blocks = change_brief(
         brief,
         proposal_summary=catalog_card.dry_run.summary if catalog_card is not None else None,
         action_id=response.proposal.action_id if response.proposal is not None else None,
+        dry_run_digest=catalog_card.digest if catalog_card is not None else None,
     )
+    line = _decided_line_for(automation, catalog_card) if catalog_card is not None else None
+    if line is not None:
+        blocks = close_decision(blocks, action_id=catalog_card.action_id, line=line) or blocks
     return blocks, f"{brief.incident_id}: {len(brief.candidates)} change(s) in the {brief.alert.service} blast radius"
+
+
+def _decided_line_for(automation: Any, pending: Any) -> str | None:
+    """The outcome line for a decided card, or `None` while it is open (or with no gateway to ask)."""
+    gateway = getattr(automation, "gateway", None)
+    outcome = gateway.outcome(pending.incident_id, pending.action_id) if gateway is not None else None
+    if outcome is None:
+        return None
+    from ..slack.handlers import _decided_line
+
+    return _decided_line(outcome)
 
 
 def _card_text(pending: Any) -> str:
@@ -87,10 +105,13 @@ async def _follow_coverage(
 
     def on_update(change: Any) -> None:
         if brief_handle is not None:
-            blocks, text = _brief_message(response, change.brief)
+            blocks, text = _brief_message(response, change.brief, automation)
             update(brief_handle[0], brief_handle[1], blocks, text=text)
         note = approval_card_note(change.brief)
         for index, (pending, handle) in enumerate(zip(response.pending, card_handles)):
+            # A decided card was closed by its click (A3); re-rendering it would restore live buttons.
+            if _decided_line_for(automation, pending) is not None:
+                continue
             if handle is not None and note != notes[index]:
                 update(handle[0], handle[1], approval_card_for(pending, coverage_note=note), text=_card_text(pending))
                 notes[index] = note
@@ -101,16 +122,129 @@ async def _follow_coverage(
         logger.exception("following coverage for %s failed", response.brief.incident_id)
 
 
+def decision_closer(automation: Automation, update: Update, *, background: bool = True) -> Callable[..., None]:
+    """A decided hook that closes *every* message offering the decision, not only the one clicked.
+
+    An action is offered twice: on its approval card and on the brief. The click handler closes the
+    message it came from; this closes the other, re-rendered from this process's state with the
+    Approve and Reject replaced by the outcome line. Runs for every recorded decision — never a replay.
+    """
+    import threading
+
+    def hook(pending: Any, outcome: Any) -> None:
+        from ..slack.blocks import change_brief, close_decision
+        from ..slack.handlers import _decided_line, approval_card_for
+
+        line = _decided_line(outcome)
+        edits: list[tuple[tuple[str, str], list[dict[str, Any]]]] = []
+
+        card = automation.cards.get((outcome.incident_id, outcome.action_id))
+        if card is not None:
+            closed = close_decision(approval_card_for(pending), action_id=outcome.action_id, line=line)
+            if closed is not None:
+                edits.append((card, closed))
+
+        brief = automation.briefs.get(outcome.incident_id)
+        thread = automation.threads.get(outcome.incident_id)
+        # A one-shot is offered on its card only; the brief's buttons belong to the catalog proposal.
+        if brief is not None and thread is not None and pending.one_shot is None:
+            blocks = change_brief(
+                brief,
+                proposal_summary=pending.dry_run.summary,
+                action_id=pending.action_id,
+                dry_run_digest=pending.digest,
+            )
+            closed = close_decision(blocks, action_id=outcome.action_id, line=line)
+            if closed is not None:
+                edits.append((thread, closed))
+
+        def send() -> None:
+            for (channel, ts), blocks in edits:
+                try:
+                    update(channel, ts, blocks, text=line)
+                except Exception:  # noqa: BLE001 - an unclosed message is cosmetic; the decision stands
+                    logger.exception("could not close a decided message for %s", outcome.incident_id)
+
+        if background:
+            threading.Thread(target=send, daemon=True, name="close-decided").start()
+        else:
+            send()
+
+    return hook
+
+
+ACTOR_ROLE_ENV = "FAZEROPS_ACTOR_ROLE_ARN"
+
+
+def assemble_from_env() -> Automation:
+    """The production `Automation`, with the actor role the credential mint assumes for AWS actions.
+
+    Without `FAZEROPS_ACTOR_ROLE_ARN`, an action that calls AWS (`restore_db_parameter`) is refused
+    before its card opens: the only identity left to run it as is this process's own, and a mutation
+    attributed to the automation host rather than its approver is the thing A4 exists to prevent.
+    """
+    import os
+
+    role_arn = os.environ.get(ACTOR_ROLE_ENV) or None
+    if role_arn is None:
+        logger.warning(
+            "%s is not set: actions that call AWS will be refused rather than run as this process's own identity",
+            ACTOR_ROLE_ENV,
+        )
+    return Automation.assemble(role_arn=role_arn)
+
+
+def record_poster(automation: Automation, upload: Callable[..., Any], *, background: bool = True) -> Callable[..., None]:
+    """B3 — a decided hook that posts the incident record into the brief's thread.
+
+    Runs off the Slack listener's thread by default: the gateway calls hooks inside `decide()`, and an
+    upload must not hold the click's reply. Posts nothing for an incident whose brief was never
+    posted by this process — there is no thread to put it in.
+    """
+    import re
+    import threading
+
+    from ..record.markdown import render_record
+
+    def hook(pending: Any, outcome: Any) -> None:
+        thread = automation.threads.get(outcome.incident_id)
+        session = automation.incident_session(pending, outcome)
+        if thread is None or session is None:
+            return
+        markdown = render_record(session)
+        # The id carries the alert's own identifier, which the alert source controls.
+        filename = re.sub(r"[^A-Za-z0-9._-]", "-", outcome.incident_id)[:120] + ".md"
+
+        def send() -> None:
+            try:
+                upload(thread[0], thread[1], markdown, filename=filename, title=f"Incident record · {outcome.incident_id}")
+            except Exception:  # noqa: BLE001 - a missing record is reported, never raised into a decision
+                logger.exception("could not post the incident record for %s", outcome.incident_id)
+
+        if background:
+            threading.Thread(target=send, daemon=True, name="incident-record").start()
+        else:
+            send()
+
+    return hook
+
+
 def build_app(
     automation: Automation,
     *,
     post: Post | None = None,
     update: Update | None = None,
     sleep: Sleep = asyncio.sleep,
+    dedupe: Any | None = None,
 ) -> FastAPI:
     from ..ingest.alerts import UnrecognisedPayload, normalize_alert
+    from ..ingest.dedupe import AlertDeduper
+    from ..models import incident_id_for
 
     app = FastAPI(title="FazerOps automation", version="0.1.0")
+    # A re-delivered firing is answered with the first delivery's result and posts nothing: no second
+    # brief, no second card, no re-registration behind a card someone is reading (D1, D2, A1).
+    dedupe = dedupe if dedupe is not None else AlertDeduper()
     # Held so a pending follow-up is not garbage-collected mid-sleep (asyncio keeps only a weak
     # reference to a task).
     app.state.follow_ups = set()
@@ -126,9 +260,30 @@ def build_app(
         except UnrecognisedPayload as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
 
-        response = await automation.respond(alert)
+        key = incident_id_for(alert)
+        seen = dedupe.claim(key)
+        if seen is not None:
+            if seen.response is None:
+                return JSONResponse({"incident_id": key, "deduplicated": True, "in_progress": True}, status_code=202)
+            return JSONResponse({**seen.response, "posted": 0, "coverage_follow_up": False, "deduplicated": True})
+
+        try:
+            response = await automation.respond(alert)
+        except BaseException:
+            dedupe.abandon(key)
+            raise
         messages = messages_for(response)
         handles = [_handle(post(blocks, text=text)) for blocks, text in messages] if post is not None else []
+        # Where the incident record goes once a decision is recorded (B3): the brief's own thread.
+        threads = getattr(automation, "threads", None)
+        if threads is not None and handles and handles[0] is not None:
+            threads[response.brief.incident_id] = handles[0]
+        # Each card's own message, so a decision made on the brief can close the card too.
+        cards = getattr(automation, "cards", None)
+        if cards is not None:
+            for pending, handle in zip(response.pending, handles[1:]):
+                if handle is not None:
+                    cards[pending.key] = handle
 
         # The brief has already posted; this only follows it. Without a way to edit it in place
         # there is nothing to follow into.
@@ -144,17 +299,17 @@ def build_app(
             task.add_done_callback(app.state.follow_ups.discard)
 
         one_shot = response.one_shot
-        return JSONResponse(
-            {
-                "incident_id": response.brief.incident_id,
-                "proposal": response.proposal.action_id if response.proposal is not None else None,
-                "one_shot": None if one_shot is None else (one_shot.one_shot.action_id if one_shot.offered else one_shot.refusal.value),
-                "pending": [pending.action_id for pending in response.pending],
-                "refused": response.refused,
-                "posted": len(messages) if post is not None else 0,
-                "coverage_follow_up": follow_up,
-            }
-        )
+        body = {
+            "incident_id": response.brief.incident_id,
+            "proposal": response.proposal.action_id if response.proposal is not None else None,
+            "one_shot": None if one_shot is None else (one_shot.one_shot.action_id if one_shot.offered else one_shot.refusal.value),
+            "pending": [pending.action_id for pending in response.pending],
+            "refused": response.refused,
+            "posted": len(messages) if post is not None else 0,
+            "coverage_follow_up": follow_up,
+        }
+        dedupe.finish(key, body)
+        return JSONResponse({**body, "deduplicated": False})
 
     return app
 
@@ -196,14 +351,28 @@ def serve(*, host: str = "127.0.0.1", port: int = 8081) -> None:  # pragma: no c
 
     import uvicorn
 
-    from ..slack.handlers import approval_sink, post_brief, run_socket_mode, update_message
+    from ..slack.commands import command_handler
+    from ..slack.handlers import approval_sink, post_brief, run_socket_mode, update_message, upload_record
     from .growth.job import run_on_schedule
     from .roster import default_roster
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    automation = Automation.assemble()
-    sink = approval_sink(automation.gateway, resolve_approver=lambda user_id: default_roster().resolve(user_id))
-    threading.Thread(target=run_socket_mode, kwargs={"sink": sink}, daemon=True, name="slack-socket-mode").start()
+    automation = assemble_from_env()
+
+    def member(user_id: str) -> Any:
+        return default_roster().resolve(user_id)
+
+    automation.decided_hooks.append(decision_closer(automation, update_message))
+    automation.decided_hooks.append(record_poster(automation, upload_record))
+    sink = approval_sink(automation.gateway, resolve_approver=member, decisions=automation.decisions)
+    command = command_handler(automation, resolve_member=member, decisions=automation.decisions)
+    malformed = automation.decisions.record_malformed if automation.decisions is not None else None
+    threading.Thread(
+        target=run_socket_mode,
+        kwargs={"sink": sink, "command": command, "on_malformed": malformed},
+        daemon=True,
+        name="slack-socket-mode",
+    ).start()
 
     schedule = growth_schedule_from_env(automation)
     if schedule is not None:

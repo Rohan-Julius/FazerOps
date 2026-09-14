@@ -81,7 +81,12 @@ def _interaction(action_id: str = "approve", user: str = "U0IC") -> dict:
                 "type": "button",
                 "action_id": action_id,
                 "value": json.dumps(
-                    {"incident_id": INCIDENT, "action_id": "revert_configmap_key"}
+                    {
+                        "incident_id": INCIDENT,
+                        "action_id": "revert_configmap_key",
+                        # What the rendered card carries (D1): the digest of the dry run it shows.
+                        "dry_run": _request().dry_run(evidence=EVIDENCE).digest,
+                    }
                 ),
             }
         ],

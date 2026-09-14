@@ -40,6 +40,7 @@ __all__ = [
     "TOP_CANDIDATES",
     "approval_card",
     "change_brief",
+    "close_decision",
 ]
 
 # Slack's hard limit. A message over it is rejected whole, not truncated by Slack.
@@ -57,7 +58,11 @@ _DIFF_LINES = 4
 
 
 def change_brief(
-    brief: Brief, *, proposal_summary: str | None = None, action_id: str | None = None
+    brief: Brief,
+    *,
+    proposal_summary: str | None = None,
+    action_id: str | None = None,
+    dry_run_digest: str | None = None,
 ) -> list[dict[str, Any]]:
     """The Tier 0 brief, posted automatically when an investigation completes.
 
@@ -88,7 +93,7 @@ def change_brief(
 
     reranked = describe_reranked(brief)
     if reranked:
-        blocks.append({"type": "context", "elements": [_mrkdwn(f":arrows_counterclockwise: *{_escape(reranked)}*")]})
+        blocks.append({"type": "context", "elements": [_mrkdwn(f"*{_escape(reranked)}*")]})
 
     if not brief.radius.keys:
         # The same distinction the text renderer draws: "we did not know where to look" is
@@ -97,7 +102,7 @@ def change_brief(
             {
                 "type": "section",
                 "text": _mrkdwn(
-                    f":warning: Could not resolve *{_escape(brief.alert.service)}* in the "
+                    f"Could not resolve *{_escape(brief.alert.service)}* in the "
                     "service manifest. No blast radius, so no changes were searched for."
                 ),
             }
@@ -115,7 +120,7 @@ def change_brief(
         from ..render.text import describe_stability
 
         blocks.append(
-            {"type": "context", "elements": [_mrkdwn(f":scales: {_escape(describe_stability(brief.stability, brief))}")]}
+            {"type": "context", "elements": [_mrkdwn(f"{_escape(describe_stability(brief.stability, brief))}")]}
         )
 
     blocks.append({"type": "context", "elements": [_mrkdwn(_ci_line(brief))]})
@@ -129,7 +134,7 @@ def change_brief(
                 "type": "context",
                 "elements": [
                     _mrkdwn(
-                        ":warning: *Degraded* — at least one change source was "
+                        "*Degraded* — at least one change source was "
                         "unavailable. This brief may be incomplete."
                     )
                 ],
@@ -140,7 +145,7 @@ def change_brief(
         from ..render.text import describe_coverage_gap
 
         blocks.append(
-            {"type": "context", "elements": [_mrkdwn(f":hourglass_flowing_sand: {_escape(describe_coverage_gap(gap))}")]}
+            {"type": "context", "elements": [_mrkdwn(f"{_escape(describe_coverage_gap(gap))}")]}
         )
 
     blocks.extend(
@@ -149,6 +154,7 @@ def change_brief(
             proposal_summary=proposal_summary,
             action_id=action_id,
             remaining=remaining,
+            dry_run_digest=dry_run_digest,
         )
     )
     return _bounded(blocks)
@@ -164,6 +170,7 @@ def approval_card(
     graduation: tuple[int, int] | None = None,
     one_shot: str | None = None,
     coverage_note: str | None = None,
+    expires_at: float | None = None,
 ) -> list[dict[str, Any]]:
     """The approval card. Handoff §9's four required elements, in its order.
 
@@ -190,7 +197,7 @@ def approval_card(
     # Above the diff, where it is read before the decision: the ranking this card was drafted from
     # may still change, or already has (`render.text.approval_card_note`).
     if coverage_note:
-        blocks.insert(3, {"type": "context", "elements": [_mrkdwn(f":warning: *{_escape(coverage_note)}*")]})
+        blocks.insert(3, {"type": "context", "elements": [_mrkdwn(f"*{_escape(coverage_note)}*")]})
 
     # Ground rule #4 on the one surface an operator actually reads. An action whose inverse
     # could not be computed says so here in the same words `execute()` will refuse with,
@@ -207,13 +214,19 @@ def approval_card(
             {
                 "type": "section",
                 "text": _mrkdwn(
-                    ":no_entry: *No inverse could be computed.* This action will refuse "
+                    "*No inverse could be computed.* This action will refuse "
                     "to execute (ground rule #4)."
                 ),
             }
         )
 
-    blocks.append({"type": "context", "elements": [_mrkdwn(_tier_line(tier, escalation_reason))]})
+    tier_line = _tier_line(tier, escalation_reason)
+    if expires_at is not None:
+        # Stated where the decision is made: after this the click refuses (`ApprovalExpired`).
+        from datetime import datetime, timezone
+
+        tier_line += f"  ·  expires {datetime.fromtimestamp(expires_at, timezone.utc):%H:%M} UTC"
+    blocks.append({"type": "context", "elements": [_mrkdwn(tier_line)]})
 
     if provisional:
         progress = f"generated, {graduation[0]}/{graduation[1]}" if graduation else "generated"
@@ -222,7 +235,7 @@ def approval_card(
                 "type": "context",
                 "elements": [
                     _mrkdwn(
-                        f":seedling: *Provisional* ({progress}) — this action was generated from "
+                        f"*Provisional* ({progress}) — this action was generated from "
                         "production evidence and needs a manager approval every time until it "
                         "graduates."
                     )
@@ -236,7 +249,7 @@ def approval_card(
                 "type": "context",
                 "elements": [
                     _mrkdwn(
-                        f":zap: *One-shot* ({_escape(one_shot)} writer) — built for this incident only and not "
+                        f"*One-shot* ({_escape(one_shot)} writer) — built for this incident only and not "
                         "in the catalog. It was run in a sandbox first and touched nothing but the resource "
                         "above; a manager approves it every time."
                     )
@@ -245,7 +258,7 @@ def approval_card(
         )
 
     for note in dry_run.notes:
-        blocks.append({"type": "context", "elements": [_mrkdwn(f":information_source: {_escape(note)}")]})
+        blocks.append({"type": "context", "elements": [_mrkdwn(f"{_escape(note)}")]})
 
     # The buttons are omitted entirely when the action cannot run. Rendering a disabled
     # Approve is not a thing Block Kit offers, and rendering a live one next to a refusal
@@ -255,6 +268,7 @@ def approval_card(
             _actions(
                 incident_id,
                 dry_run.action_id,
+                dry_run_digest=dry_run.digest,
                 include_show_all=False,
                 approve_style="danger" if tier is Tier.MANAGER_APPROVAL or provisional or one_shot else "primary",
             )
@@ -329,6 +343,7 @@ def _proposal_blocks(
     proposal_summary: str | None,
     action_id: str | None,
     remaining: int,
+    dry_run_digest: str | None = None,
 ) -> list[dict[str, Any]]:
     blocks: list[dict[str, Any]] = [{"type": "divider"}]
 
@@ -342,7 +357,7 @@ def _proposal_blocks(
                     "type": "context",
                     "elements": [
                         _mrkdwn(
-                            ":warning: This proposal was drafted from the ranking before late changes "
+                            "This proposal was drafted from the ranking before late changes "
                             "arrived. Check it against the new #1 before approving."
                         )
                     ],
@@ -362,6 +377,7 @@ def _proposal_blocks(
         _actions(
             brief.incident_id,
             action_id,
+            dry_run_digest=dry_run_digest,
             include_show_all=remaining > 0,
             remaining=remaining,
         )
@@ -376,6 +392,7 @@ def _actions(
     include_show_all: bool,
     remaining: int = 0,
     approve_style: str = "primary",
+    dry_run_digest: str | None = None,
 ) -> dict[str, Any]:
     """The interactive row.
 
@@ -385,8 +402,10 @@ def _actions(
     """
     elements: list[dict[str, Any]] = []
 
-    if action_id:
-        payload = _payload(incident_id, action_id)
+    # Approve and Reject need the digest of the dry run they sit under; without one
+    # `parse_decision` refuses the click, so a button that could only ever fail is not rendered.
+    if action_id and dry_run_digest:
+        payload = _payload(incident_id, action_id, dry_run_digest)
         elements += [
             {
                 "type": "button",
@@ -424,18 +443,64 @@ def _actions(
     return {"type": "actions", "block_id": f"fazerops:{incident_id}", "elements": elements}
 
 
-def _payload(incident_id: str, action_id: str | None) -> str:
+def _payload(incident_id: str, action_id: str | None, dry_run_digest: str | None = None) -> str:
     """What a button carries back.
 
     The **identifiers only** — never the parameters. `handlers.py` re-derives the action
     from the incident, so a payload edited in transit names an incident and an action id
     that are both checked against the catalog and the store; it cannot smuggle a namespace
     or a target value into an executor. That is the same argument as W19b's handles.
+
+    `dry_run` identifies what the clicker *read*, not what runs: the gateway compares it with the
+    dry run it holds and refuses a mismatch (drift log, 14 Sep, D1). Editing it can only make a
+    click refuse.
     """
-    value = json.dumps({"incident_id": incident_id, "action_id": action_id})
+    content: dict[str, Any] = {"incident_id": incident_id, "action_id": action_id}
+    if dry_run_digest is not None:
+        content["dry_run"] = dry_run_digest
+    value = json.dumps(content)
     if len(value) > _VALUE_LIMIT:  # pragma: no cover - ids are short by construction
         raise ValueError(f"button payload is {len(value)} chars, over Slack's 2000 limit")
     return value
+
+
+def close_decision(
+    blocks: list[dict[str, Any]], *, action_id: str | None, line: str
+) -> list[dict[str, Any]] | None:
+    """The clicked message with `action_id`'s Approve and Reject replaced by `line`.
+
+    Everything else is kept — on the brief, "Show all changes" stays clickable. Returns `None`
+    when the message holds no buttons for this action, so the caller edits nothing rather than
+    appending a line to a message that was never a decision.
+    """
+    closed: list[dict[str, Any]] = []
+    touched = False
+    for block in blocks:
+        elements = block.get("elements") or []
+        if block.get("type") != "actions":
+            closed.append(block)
+            continue
+        kept = [
+            element
+            for element in elements
+            if not (element.get("action_id") in ("approve", "reject") and _payload_action(element.get("value")) == action_id)
+        ]
+        if len(kept) == len(elements):
+            closed.append(block)
+            continue
+        touched = True
+        if kept:
+            closed.append({**block, "elements": kept})
+        closed.append({"type": "context", "elements": [_mrkdwn(line)]})
+    return closed if touched else None
+
+
+def _payload_action(value: Any) -> str | None:
+    try:
+        content = json.loads(value or "")
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return content.get("action_id") if isinstance(content, dict) else None
 
 
 def _ci_line(brief: Brief) -> str:
@@ -443,7 +508,7 @@ def _ci_line(brief: Brief) -> str:
     hardcoded — W11a's point is that the punchline is true because the data says so."""
     from ..collectors.github import render_ci_status
 
-    return f":octagonal_sign: {_escape(render_ci_status(brief.ci_status))}"
+    return f"{_escape(render_ci_status(brief.ci_status))}"
 
 
 def _tier_line(tier: Tier, escalation_reason: str | None) -> str:
@@ -531,7 +596,7 @@ def _bounded(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "type": "context",
             "elements": [
                 _mrkdwn(
-                    f":scissors: {omitted} further block{'' if omitted == 1 else 's'} "
+                    f"{omitted} further block{'' if omitted == 1 else 's'} "
                     "omitted to stay under Slack's 50-block limit. The full brief is in "
                     "the incident record."
                 )

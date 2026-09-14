@@ -42,7 +42,7 @@ SYNTHETIC = SlackConfig(
 def _interaction(action_id: str = "approve", value: dict | str | None = None) -> dict:
     """A Slack `block_actions` payload, in the shape Bolt hands a handler."""
     if value is None:
-        value = {"incident_id": "INC-1", "action_id": "revert_configmap_key"}
+        value = {"incident_id": "INC-1", "action_id": "revert_configmap_key", "dry_run": "0123456789abcdef"}
     return {
         "type": "block_actions",
         "user": {"id": "U0IC"},
@@ -119,6 +119,7 @@ def test_an_approve_click_parses_into_a_decision():
         user_id="U0IC",
         channel_id="C0SYNTHETIC",
         message_ts="1789000000.000100",
+        dry_run_digest="0123456789abcdef",
     )
 
 
@@ -164,6 +165,7 @@ def test_a_button_payload_carries_identifiers_and_nothing_executable():
         value={
             "incident_id": "INC-1",
             "action_id": "revert_configmap_key",
+            "dry_run": "0123456789abcdef",
             "namespace": "kube-system",
             "target_value": "0",
         }
@@ -178,6 +180,7 @@ def test_a_button_payload_carries_identifiers_and_nothing_executable():
         "user_id",
         "channel_id",
         "message_ts",
+        "dry_run_digest",
     }
 
 

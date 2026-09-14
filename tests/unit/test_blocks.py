@@ -159,7 +159,10 @@ async def test_the_brief_carries_an_explicit_ci_status_line(demo_brief):
 
 async def test_the_brief_offers_approve_and_reject(demo_brief):
     blocks = change_brief(
-        demo_brief, proposal_summary="Revert pool.max", action_id="revert_configmap_key"
+        demo_brief,
+        proposal_summary="Revert pool.max",
+        action_id="revert_configmap_key",
+        dry_run_digest="0123456789abcdef",
     )
     buttons = _buttons(blocks)
 
@@ -168,6 +171,7 @@ async def test_the_brief_offers_approve_and_reject(demo_brief):
         if button["action_id"] in ("approve", "reject"):
             value = json.loads(button["value"])
             assert value == {
+                "dry_run": "0123456789abcdef",
                 "incident_id": demo_brief.incident_id,
                 "action_id": "revert_configmap_key",
             }

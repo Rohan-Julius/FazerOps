@@ -31,6 +31,7 @@ __all__ = [
     "Decision",
     "DecisionSink",
     "MalformedCallback",
+    "Reply",
     "approval_card_for",
     "approval_sink",
     "SlackNotConfigured",
@@ -38,6 +39,7 @@ __all__ = [
     "parse_decision",
     "post_brief",
     "run_socket_mode",
+    "upload_record",
     "slack_config",
 ]
 
@@ -88,12 +90,40 @@ class Decision(BaseModel):
     user_id: str = Field(description="The Slack user who clicked. W26b's approver identity.")
     channel_id: str | None = None
     message_ts: str | None = None
+    dry_run_digest: str | None = Field(
+        default=None,
+        description="The digest of the dry run the clicked card showed (`DryRun.digest`). An "
+        "identifier of what was *read*, never of what to run — the gateway compares it and refuses "
+        "a mismatch.",
+    )
+
+
+class Reply(str):
+    """What the sink wants said, and to whom. A `str`, so a sink returning plain text still works.
+
+    `private` sends it to the clicker alone. A refusal is about one person's click — an IC who is
+    not permitted, a stale or expired card — and posting it into the incident channel is noise at
+    the moment attention is scarcest.
+
+    `card_line`, when set, closes the clicked message in place: its Approve and Reject buttons are
+    replaced by that line, so a decided card stops offering a decision (the replay guard made a
+    second click safe; it did not make it look finished).
+    """
+
+    private: bool
+    card_line: str | None
+
+    def __new__(cls, text: str, *, private: bool = False, card_line: str | None = None) -> Reply:
+        reply = super().__new__(cls, text)
+        reply.private = private
+        reply.card_line = card_line
+        return reply
 
 
 # What to do with a parsed decision. W25 records it; W26 routes, checks idempotency and
 # executes. Typed as a plain callable so W26 substitutes a function rather than subclassing
 # anything — the seam is the `Decision`, not a class hierarchy.
-DecisionSink = Callable[[Decision], "str | None"]
+DecisionSink = Callable[[Decision], "str | Reply | None"]
 
 
 def slack_config() -> SlackConfig:
@@ -149,6 +179,15 @@ def parse_decision(payload: dict[str, Any]) -> Decision:
     if kind in ("approve", "reject") and not action_id:
         raise MalformedCallback(f"{kind} callback carried no action_id")
 
+    # Refused for the same reason, and it closes D1 (drift log, 14 Sep): without the digest the
+    # gateway cannot tell which dry run the clicker read, and a decision it cannot place is one it
+    # must not make.
+    digest = value.get("dry_run")
+    if digest is not None and not isinstance(digest, str):
+        raise MalformedCallback("button value carried a non-string dry-run digest")
+    if kind in ("approve", "reject") and not digest:
+        raise MalformedCallback(f"{kind} callback carried no dry-run digest")
+
     return Decision(
         kind=kind,
         incident_id=incident_id,
@@ -156,6 +195,7 @@ def parse_decision(payload: dict[str, Any]) -> Decision:
         user_id=(payload.get("user") or {}).get("id", ""),
         channel_id=(payload.get("channel") or {}).get("id"),
         message_ts=(payload.get("message") or {}).get("ts"),
+        dry_run_digest=digest,
     )
 
 
@@ -164,8 +204,13 @@ def build_app(
     config: SlackConfig | None = None,
     sink: DecisionSink | None = None,
     client: Any | None = None,
+    command: Callable[..., None] | None = None,
+    on_malformed: Callable[[dict[str, Any], str], None] | None = None,
 ) -> Any:
-    """A Bolt app with the three button handlers registered.
+    """A Bolt app with the three button handlers registered, and `/fazerops` when `command` is given.
+
+    `on_malformed` is told about every button payload `parse_decision` refused (B1) — the one kind of
+    click that never becomes a `Decision`, so no sink sees it.
 
     `client` is injectable so a test can drive real handler registration offline. It has
     to be a `slack_sdk.WebClient` — Bolt type-checks it — so the test subclasses one and
@@ -192,19 +237,24 @@ def build_app(
     )
 
     for kind in ACTION_IDS:
-        app.action(kind)(_make_handler(sink))
+        app.action(kind)(_make_handler(sink, on_malformed=on_malformed))
+
+    if command is not None:
+        from .commands import COMMAND
+
+        app.command(COMMAND)(command)
 
     return app
 
 
-def _make_handler(sink: DecisionSink):
+def _make_handler(sink: DecisionSink, on_malformed: Callable[[dict[str, Any], str], None] | None = None):
     """One handler for all three buttons — the branch is the `Decision.kind`.
 
     **`ack()` comes first, always.** Slack times out an interaction at 3 seconds and then
     shows the operator a failure, so anything the sink does slowly must not delay it.
     """
 
-    def handle(ack, body, say=None, logger=None, **_: Any) -> None:
+    def handle(ack, body, say=None, logger=None, client=None, **_: Any) -> None:
         ack()
         try:
             decision = parse_decision(body)
@@ -213,15 +263,79 @@ def _make_handler(sink: DecisionSink):
             # exactly like an approval that worked.
             if logger is not None:
                 logger.warning("refused a malformed Slack callback: %s", exc)
-            if say is not None:
-                say(":no_entry: That button did not carry a valid incident reference.")
+            if on_malformed is not None:
+                try:
+                    on_malformed(body, str(exc))
+                except Exception:  # noqa: BLE001 - an audit write never changes the answer
+                    pass
+            _deliver(
+                Reply("That button did not carry a valid incident reference.", private=True),
+                body=body,
+                say=say,
+                client=client,
+                logger=logger,
+            )
             return
 
         response = sink(decision)
-        if response and say is not None:
-            say(response)
+        if response:
+            _deliver(response, body=body, say=say, client=client, logger=logger, decision=decision)
 
     return handle
+
+
+def _deliver(
+    response: str,
+    *,
+    body: dict[str, Any],
+    say: Any,
+    client: Any,
+    logger: Any,
+    decision: Decision | None = None,
+) -> None:
+    """Close the clicked card if asked, then say the reply — privately if asked.
+
+    The card is rebuilt from the clicked message's own blocks with only the Approve and Reject for
+    this action removed, so nothing a payload carried decides what runs: the edit touches the
+    message Slack says was clicked, and adds a line this process composed.
+
+    Every Slack call degrades to `say`. A reply that could not be sent privately is still sent: a
+    silently dropped refusal looks to the clicker exactly like an approval that worked.
+    """
+    reply = response if isinstance(response, Reply) else Reply(response)
+    channel = (body.get("channel") or {}).get("id")
+    user = (body.get("user") or {}).get("id")
+
+    closed = False
+    if reply.card_line and client is not None and decision is not None and decision.message_ts and channel:
+        from .blocks import close_decision
+
+        blocks = close_decision(
+            (body.get("message") or {}).get("blocks") or [],
+            action_id=decision.action_id,
+            line=reply.card_line,
+        )
+        if blocks is not None:
+            try:
+                client.chat_update(channel=channel, ts=decision.message_ts, blocks=blocks, text=reply.card_line)
+                closed = True
+            except Exception:  # noqa: BLE001 - an unclosed card is cosmetic; the decision stands
+                if logger is not None:
+                    logger.warning("could not close the decided card", exc_info=True)
+
+    if reply.private and client is not None and channel and user:
+        try:
+            client.chat_postEphemeral(channel=channel, user=user, text=str(reply))
+            return
+        except Exception:  # noqa: BLE001 - fall through to a public reply rather than none
+            if logger is not None:
+                logger.warning("could not reply privately; replying in channel", exc_info=True)
+
+    # A closed card already shows the line; saying it again would post the outcome twice.
+    if closed and not reply.private and reply.card_line == str(reply):
+        return
+    if say is not None:
+        say(str(reply))
 
 
 def _record_only(decision: Decision) -> str:
@@ -254,6 +368,7 @@ def approval_card_for(pending: Any, *, coverage_note: str | None = None) -> list
         pending.dry_run,
         incident_id=pending.incident_id,
         tier=pending.tier,
+        expires_at=pending.expires_at,
         escalation_reason=pending.escalation_reason,
         provisional=pending.provisional,
         graduation=pending.graduation,
@@ -270,6 +385,7 @@ def approval_sink(
     gateway: Any,
     *,
     resolve_approver: Callable[[str], Any],
+    decisions: Any = None,
 ) -> DecisionSink:
     """W26 — the sink that routes a click to the approval gateway.
 
@@ -287,12 +403,32 @@ def approval_sink(
     `docs/drift_log.md`), and the result of a ConfigMap patch is exactly the kind of value
     that was redacted on the card two messages earlier.
     """
-    from ..actions.approval import ApprovalRefused, ApproverNotPermitted, NotAwaitingApproval
+    from ..actions.approval import ApprovalRefused
 
-    def sink(decision: Decision) -> str | None:
+    def log(decision: Decision, approver: Any, *, result: str, reason: Any = None, tier: int | None = None) -> None:
+        if decisions is None:
+            return
+        try:
+            decisions.record(
+                result=result,
+                user_id=decision.user_id,
+                kind=decision.kind,
+                incident_id=decision.incident_id,
+                action_id=decision.action_id,
+                dry_run_digest=decision.dry_run_digest,
+                role=None if approver is None else approver.role.value,
+                tier=tier,
+                reason=(f"{type(reason).__name__}: {reason}" if isinstance(reason, BaseException) else reason),
+            )
+        except Exception:  # noqa: BLE001 - an audit write never changes the answer (B1)
+            pass
+
+    def sink(decision: Decision) -> Reply | None:
         if decision.kind == "show_all":
-            return f"Full change list for {decision.incident_id} — see the incident record."
+            log(decision, None, result="read")
+            return Reply(f"Full change list for {decision.incident_id} — see the incident record.", private=True)
 
+        approver = None
         try:
             # Inside the guard on purpose: `roster.UnknownApprover` is an `ApprovalRefused`,
             # and resolving outside the try would let an unlisted clicker raise through the
@@ -303,41 +439,82 @@ def approval_sink(
                 action_id=decision.action_id,
                 approver=approver,
                 kind=decision.kind,
-            )
-        except ApproverNotPermitted as exc:
-            # Visible, and it names the escalation. A silently ignored click looks to the
-            # operator exactly like an approval that worked.
-            return f":lock: {exc}"
-        except NotAwaitingApproval:
-            return (
-                f":no_entry: No approval is open for `{decision.action_id}` on "
-                f"{decision.incident_id}. Nothing has run."
+                dry_run_digest=decision.dry_run_digest,
             )
         except ApprovalRefused as exc:
-            return f":no_entry: {exc}"
+            # Every refusal is logged (B1): these are the clicks a security review asks about first,
+            # and none of them reaches `IncidentSession`.
+            log(decision, approver, result="refused", reason=exc)
+            return _refusal(decision, exc)
 
+        log(decision, approver, result=_result_of(outcome), reason=outcome.error, tier=int(outcome.tier))
         if outcome.replay:
-            return (
-                f":repeat: `{outcome.action_id}` on {outcome.incident_id} was already "
-                f"{outcome.decision} by <@{outcome.approver}>. Nothing was re-run."
+            return Reply(
+                f"`{outcome.action_id}` on {outcome.incident_id} was already "
+                f"{outcome.decision} by <@{outcome.approver}>. Nothing was re-run.",
+                private=True,
+                card_line=_decided_line(outcome),
             )
-        if outcome.decision == "rejected":
-            return (
-                f":x: <@{outcome.approver}> rejected `{outcome.action_id}` for "
-                f"{outcome.incident_id}. Nothing has run."
-            )
-        if outcome.error:
-            return (
-                f":warning: `{outcome.action_id}` was approved by <@{outcome.approver}> but "
-                f"failed: {outcome.error}. Check the resource before retrying — the "
-                "approval will not run again."
-            )
-        return (
-            f":white_check_mark: <@{outcome.approver}> approved `{outcome.action_id}` for "
-            f"{outcome.incident_id} (tier {int(outcome.tier)}); it executed once."
-        )
-
+        line = _decided_line(outcome)
+        return Reply(line, card_line=line)
     return sink
+
+
+def _refusal(decision: Decision, exc: Exception) -> Reply:
+    """What a refused click is told, and how its card is closed when it should be."""
+    from ..actions.approval import ApprovalExpired, ApproverNotPermitted, NotAwaitingApproval, StaleCard
+
+    if isinstance(exc, ApproverNotPermitted):
+        # Visible to the clicker, and it names the escalation. The card stays open: it is
+        # waiting for a manager, not decided.
+        return Reply(f"{exc}", private=True)
+    if isinstance(exc, StaleCard):
+        return Reply(
+            f"{exc}",
+            private=True,
+            card_line="Superseded by a newer card for this action. Nothing ran from this one.",
+        )
+    if isinstance(exc, ApprovalExpired):
+        return Reply(
+            f"{exc}",
+            private=True,
+            card_line="Expired before a decision. Nothing ran — re-investigate for a fresh card.",
+        )
+    if isinstance(exc, NotAwaitingApproval):
+        return Reply(
+            f"No approval is open for `{decision.action_id}` on "
+            f"{decision.incident_id}. Nothing has run.",
+            private=True,
+            card_line="No longer open. Nothing ran.",
+        )
+    return Reply(f"{exc}", private=True)
+
+
+def _result_of(outcome: Any) -> str:
+    if outcome.replay:
+        return "replay"
+    if outcome.decision == "rejected":
+        return "rejected"
+    return "failed" if outcome.error else "executed"
+
+
+def _decided_line(outcome: Any) -> str:
+    """The one line an outcome is announced with, and what the closed card shows."""
+    if outcome.decision == "rejected":
+        return (
+            f"<@{outcome.approver}> rejected `{outcome.action_id}` for "
+            f"{outcome.incident_id}. Nothing has run."
+        )
+    if outcome.error:
+        return (
+            f"`{outcome.action_id}` was approved by <@{outcome.approver}> but "
+            f"failed: {outcome.error}. Check the resource before retrying — the "
+            "approval will not run again."
+        )
+    return (
+        f"<@{outcome.approver}> approved `{outcome.action_id}` for "
+        f"{outcome.incident_id} (tier {int(outcome.tier)}); it executed once."
+    )
 
 
 def post_brief(
@@ -381,9 +558,49 @@ def update_message(
     return client.chat_update(channel=channel, ts=ts, blocks=blocks, text=text)
 
 
-def run_socket_mode(*, sink: DecisionSink | None = None) -> None:  # pragma: no cover - a loop
+def upload_record(
+    channel: str,
+    thread_ts: str,
+    markdown: str,
+    *,
+    filename: str,
+    title: str,
+    config: SlackConfig | None = None,
+    client: Any | None = None,
+) -> None:
+    """B3 — put the incident record into the brief's thread, as a file.
+
+    A markdown file rather than a Canvas: a bot can create a Canvas, but not one that sits inside a
+    thread, and the thread is where the incident was worked. Needs the `files:write` scope. When the
+    upload is refused — a missing scope is the likely reason — the record is posted as a threaded
+    message instead, so it still lands where people are looking.
+    """
+    import logging
+
+    if client is None:
+        from slack_sdk import WebClient
+
+        config = config if config is not None else slack_config()
+        client = WebClient(token=config.bot_token)
+    try:
+        client.files_upload_v2(channel=channel, thread_ts=thread_ts, content=markdown, filename=filename, title=title)
+    except Exception:  # noqa: BLE001 - fall back to a message rather than lose the record
+        logging.getLogger(__name__).warning("record upload refused; posting it as a message", exc_info=True)
+        limit = 3500
+        text = markdown if len(markdown) <= limit else markdown[:limit] + "\n… (truncated; the file upload was refused — does the app have `files:write`?)"
+        client.chat_postMessage(channel=channel, thread_ts=thread_ts, text=text)
+
+
+def run_socket_mode(
+    *,
+    sink: DecisionSink | None = None,
+    command: Callable[..., None] | None = None,
+    on_malformed: Callable[[dict[str, Any], str], None] | None = None,
+) -> None:  # pragma: no cover - a loop
     """Open the socket and block. The demo's listener process."""
     from slack_bolt.adapter.socket_mode import SocketModeHandler
 
     config = slack_config()
-    SocketModeHandler(build_app(config=config, sink=sink), config.app_token).start()
+    SocketModeHandler(
+        build_app(config=config, sink=sink, command=command, on_malformed=on_malformed), config.app_token
+    ).start()

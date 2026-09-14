@@ -99,7 +99,7 @@ async def test_a_decline_is_recorded_and_its_one_shot_reaches_a_card(automation,
 
     sink = approval_sink(automation.gateway, resolve_approver=ROSTER.resolve)
     click = dict(incident_id=pending.incident_id, action_id=pending.action_id)
-    assert ":lock:" in sink(Decision(kind="approve", user_id="U_IC", **click)), "an engineer cannot approve a one-shot"
+    assert "manager approval" in sink(Decision(kind="approve", user_id="U_IC", **click)), "an engineer cannot approve a one-shot"
     sink(Decision(kind="approve", user_id="U_MGR", **click))
     sink(Decision(kind="approve", user_id="U_MGR", **click))
     assert executions == [pending.action_id]
@@ -116,8 +116,32 @@ def test_the_server_posts_the_brief_and_every_card(automation):
     assert posted[1].startswith("Approval required")
 
 
-def test_a_refired_alert_says_why_no_second_card_opened(automation):
-    client = TestClient(build_app(automation))
+def test_a_redelivered_alert_is_answered_from_the_first_and_posts_nothing(automation):
+    """A1: a re-delivery of one firing never reaches the gateway, so it cannot open a second card."""
+    posted: list[str] = []
+    client = TestClient(build_app(automation, post=lambda blocks, text: posted.append(text)))
+    first = client.post("/alerts", json=ALERT).json()
+
+    again = client.post("/alerts", json=ALERT).json()
+
+    assert again["deduplicated"] is True and again["posted"] == 0
+    assert again["incident_id"] == first["incident_id"] and len(posted) == 2
+
+
+def test_a_reinvestigated_firing_says_why_no_second_card_opened(automation):
+    """Past the dedupe window — or in a new process — the gateway's idempotency table still refuses."""
+
+    class NoDedupe:
+        def claim(self, key):
+            return None
+
+        def finish(self, key, response):
+            pass
+
+        def abandon(self, key):
+            pass
+
+    client = TestClient(build_app(automation, dedupe=NoDedupe()))
     first = client.post("/alerts", json=ALERT).json()
     approval_sink(automation.gateway, resolve_approver=ROSTER.resolve)(
         Decision(kind="approve", incident_id=first["incident_id"], action_id="revert_configmap_key", user_id="U_IC")
