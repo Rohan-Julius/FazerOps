@@ -11,7 +11,8 @@ FROM --platform=linux/arm64 python:3.12-slim
 # Defaults are the zero-credential path (plan §5). A deployed container with no AWS or
 # Gemini configuration still answers with the recorded fixture brief rather than failing,
 # and `invoke`'s response reports which mode it came up in so the difference is never
-# guessed from the output.
+# guessed from the output. The deployment overrides these with `agentcore deploy --env`
+# (FAZEROPS_LLM=gemini, the Identity provider name, the session store) — never a key.
 ENV FAZEROPS_MODE=fixture \
     FAZEROPS_LLM=stub \
     PYTHONUNBUFFERED=1 \
@@ -23,7 +24,9 @@ WORKDIR /app
 # Dependencies before source, so an edit to `src/` does not invalidate the install layer.
 COPY pyproject.toml README.md LICENSE ./
 COPY src/ ./src/
-RUN pip install --no-cache-dir . bedrock-agentcore
+# `gemini` because the deployed agent is Gemini-backed (plan §9.2); without the extra the image
+# builds, deploys and answers `/ping`, and the first live invocation fails on an ImportError.
+RUN pip install --no-cache-dir ".[gemini]" bedrock-agentcore
 
 # Everything the fixture path reads. `fixtures/` is the point of the zero-credential mode
 # and `config/` holds the service manifest, the action catalog and the thresholds — without

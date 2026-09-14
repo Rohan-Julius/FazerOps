@@ -109,9 +109,10 @@ async def test_an_unrecognised_payload_is_refused_rather_than_guessed(entrypoint
 async def test_the_response_reports_the_configuration_it_came_up_in(entrypoint, monkeypatch):
     """A container that silently defaulted to `fixture` when it was meant to be `live`
     produces a brief that looks entirely normal and is about the wrong world."""
+    monkeypatch.delenv("FAZEROPS_SESSION_STORE", raising=False)
     response = await entrypoint.invoke({"alert": _alert_payload()})
 
-    assert response["runtime"] == {"mode": "fixture", "llm": "stub"}
+    assert response["runtime"] == {"mode": "fixture", "llm": "stub", "session_store": "none"}
 
 
 def test_there_is_exactly_one_entrypoint(entrypoint):
@@ -242,3 +243,201 @@ async def test_the_session_is_recordable_without_the_automation_layer_having_run
     assert session.execution is None
     assert session.stage == "investigated"
     assert json.loads(session.model_dump_json())["incident_id"] == "INC-7c1f9a2e4b6d8033-20260906T144100Z"
+
+
+# --------------------------------------------------------------------------------------
+# The graph, not the bare pipeline (14 Sep)
+# --------------------------------------------------------------------------------------
+
+
+async def test_the_entrypoint_runs_the_correlator_and_so_returns_a_narrative(entrypoint):
+    """`pipeline.investigate` never reaches the correlator; the deployed agent must, or it is an
+    AgentCore deployment of four collectors and no agent. The stub correlator narrates too."""
+    session = (await entrypoint.invoke({"alert": _alert_payload()}))["session"]
+
+    assert session["narrative"]
+    cited = set(session["evidence_ids"])
+    assert cited and cited <= {candidate["event"]["id"] for candidate in session["candidates"]}
+
+
+def test_the_graph_is_built_without_the_proposer(entrypoint):
+    """The proposer node is the graph's only edge into the automation layer. The import check above
+    cannot see a keyword argument, so this reads the call itself."""
+    import ast
+
+    tree = ast.parse(Path(entrypoint.__file__).read_text(encoding="utf-8"))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "investigate_via_graph"
+    ]
+
+    assert calls, "the entrypoint no longer runs the graph"
+    for call in calls:
+        assert "proposer_node" not in {keyword.arg for keyword in call.keywords}
+
+
+# --------------------------------------------------------------------------------------
+# Persistence (Handoff §10, record/store.py)
+# --------------------------------------------------------------------------------------
+
+
+class _Store:
+    name = "fake"
+
+    def __init__(self):
+        self.saved = []
+
+    def save(self, session):
+        self.saved.append(session)
+        return f"ref-{len(self.saved)}"
+
+    def load(self, incident_id):
+        matching = [s for s in self.saved if s.incident_id == incident_id]
+        return matching[-1] if matching else None
+
+    def history(self, incident_id):
+        from fazerops.record.store import StoredStage
+
+        return [StoredStage(recorded_at="t", stage=s.stage) for s in self.saved if s.incident_id == incident_id]
+
+
+async def test_no_store_configured_is_reported_not_hidden(entrypoint, monkeypatch):
+    monkeypatch.delenv("FAZEROPS_SESSION_STORE", raising=False)
+
+    response = await entrypoint.invoke({"alert": _alert_payload()})
+
+    assert response["persisted"] == {"store": None}
+
+
+async def test_the_investigated_session_is_persisted_and_reads_back(entrypoint, monkeypatch):
+    store = _Store()
+    monkeypatch.setattr(entrypoint, "session_store_from_env", lambda: store)
+
+    response = await entrypoint.invoke({"alert": _alert_payload()})
+    assert response["persisted"] == {"store": "fake", "ok": True, "ref": "ref-1"}
+
+    read = await entrypoint.invoke({"get_session": response["incident_id"]})
+    assert read["stage"] == "investigated"
+    assert read["history"] == [{"recorded_at": "t", "stage": "investigated"}]
+    assert read["session"] == response["session"]
+    json.dumps(read)
+
+
+async def test_a_failing_store_never_costs_the_caller_the_brief(entrypoint, monkeypatch):
+    """The brief is the product; its record is reported missing rather than raised."""
+
+    class Broken(_Store):
+        def save(self, session):
+            raise RuntimeError("AccessDenied on PutItem")
+
+    monkeypatch.setattr(entrypoint, "session_store_from_env", lambda: Broken())
+
+    response = await entrypoint.invoke({"alert": _alert_payload()})
+
+    assert "billing-api-config" in response["brief"]
+    assert response["persisted"]["ok"] is False
+    assert "AccessDenied" in response["persisted"]["error"]
+
+
+async def test_reading_back_an_unknown_incident_says_so(entrypoint, monkeypatch):
+    monkeypatch.setattr(entrypoint, "session_store_from_env", lambda: _Store())
+
+    read = await entrypoint.invoke({"get_session": "INC-never"})
+
+    assert "no session stored" in read["error"]
+
+
+async def test_reading_back_with_no_store_names_the_variable(entrypoint, monkeypatch):
+    monkeypatch.delenv("FAZEROPS_SESSION_STORE", raising=False)
+
+    read = await entrypoint.invoke({"get_session": "INC-any"})
+
+    assert "FAZEROPS_SESSION_STORE" in read["error"]
+
+
+# --------------------------------------------------------------------------------------
+# The Gemini key, from AgentCore Identity
+# --------------------------------------------------------------------------------------
+
+
+async def test_a_gemini_run_without_a_runtime_user_is_refused_before_investigating(entrypoint, monkeypatch):
+    """Identity issues a key only to a request that names a user. Falling back to the stub instead
+    would deploy an agent that quietly never calls its model."""
+    monkeypatch.setattr(entrypoint, "_calls_gemini", lambda: True)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("FAZEROPS_GEMINI_KEY_PROVIDER", "fazerops-gemini")
+    monkeypatch.setattr(entrypoint, "_workload_token", lambda: None)
+
+    async def must_not_run(*args, **kwargs):
+        raise AssertionError("investigated without a key")
+
+    monkeypatch.setattr(entrypoint, "investigate_via_graph", must_not_run)
+
+    response = await entrypoint.invoke({"alert": _alert_payload()})
+
+    assert "--user-id" in response["error"]
+
+
+async def test_the_key_is_fetched_from_identity_with_the_workload_token(entrypoint, monkeypatch):
+    fetched = {}
+
+    class Identity:
+        async def get_api_key(self, *, provider_name, agent_identity_token):
+            fetched.update(provider=provider_name, token=agent_identity_token)
+            return "fetched-key"
+
+    monkeypatch.setattr(entrypoint, "_calls_gemini", lambda: True)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("FAZEROPS_GEMINI_KEY_PROVIDER", "fazerops-gemini")
+    monkeypatch.setattr(entrypoint, "_workload_token", lambda: "wat-123")
+    monkeypatch.setattr(entrypoint, "_identity_client", lambda region: Identity())
+
+    await entrypoint._ensure_gemini_key()
+
+    assert fetched == {"provider": "fazerops-gemini", "token": "wat-123"}
+    import os
+
+    assert os.environ["GEMINI_API_KEY"] == "fetched-key"
+
+
+async def test_no_key_is_fetched_when_no_model_is_called(entrypoint, monkeypatch):
+    monkeypatch.setenv("FAZEROPS_GEMINI_KEY_PROVIDER", "fazerops-gemini")
+    monkeypatch.setattr(entrypoint, "_identity_client", lambda region: pytest.fail("fetched a key for the stub"))
+
+    await entrypoint._ensure_gemini_key()
+
+
+# --------------------------------------------------------------------------------------
+# Why a run degraded (14 Sep: a live run degraded and left no trace of which node failed)
+# --------------------------------------------------------------------------------------
+
+
+async def test_a_clean_run_reports_no_node_errors(entrypoint):
+    response = await entrypoint.invoke({"alert": _alert_payload()})
+
+    assert response["node_errors"] == {}
+    assert response["plan_degraded"] is False
+
+
+async def test_a_degraded_run_says_which_node_failed_and_why(entrypoint, monkeypatch):
+    import fazerops.pipeline as pipeline
+
+    real = pipeline.build_collectors
+
+    class Unreachable:
+        source = "github"
+
+        async def fetch(self, radius, window):
+            raise ConnectionError("api.github.com unreachable")
+
+    monkeypatch.setattr(
+        pipeline, "build_collectors", lambda: [c for c in real() if c.source != "github"] + [Unreachable()]
+    )
+
+    response = await entrypoint.invoke({"alert": _alert_payload()})
+
+    assert response["degraded"] is True
+    assert response["node_errors"]["github"].startswith("ConnectionError")
+    assert "billing-api-config" in response["brief"], "the other three sources still ranked it"
+    json.dumps(response)
