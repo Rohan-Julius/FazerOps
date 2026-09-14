@@ -87,3 +87,58 @@ async def test_a_live_orchestrator_node_runs_orchestrate_with_the_runs_session_a
 def test_the_orchestrators_clock_fires_before_the_graphs_backstop():
     """If the backstop fired first, a slow orchestrator would fail the graph again."""
     assert graph.ORCHESTRATOR_TIMEOUT_SECONDS < graph.NODE_TIMEOUT_SECONDS * graph.GRAPH_TIMEOUT_MULTIPLE
+
+
+# --------------------------------------------------------------------------------------
+# The correlator and the proposer, bounded the same way (the nodes after the orchestrator)
+# --------------------------------------------------------------------------------------
+
+
+async def test_a_hung_correlator_costs_the_narrative_and_not_the_graph(monkeypatch):
+    from fazerops.agents import correlator
+
+    async def hangs(brief, **kwargs):
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(correlator, "correlate", hangs)
+    monkeypatch.setattr(graph, "CORRELATOR_TIMEOUT_SECONDS", 0.2)
+    state = InvestigationState(normalize_alert(ALERT))
+
+    brief, result = await investigate_via_graph(state.alert, state=state)
+
+    assert result.status.value == "completed"
+    assert state.node_errors["correlator"].startswith("timed out")
+    assert brief.narrative is None and brief.candidates[0].event.resource.name == "billing-api-config"
+    assert brief.degraded is False, "every source answered; only the explanation is missing"
+
+
+async def test_a_hung_proposer_costs_the_proposal_and_not_the_graph(monkeypatch):
+    from fazerops.agents import proposer
+
+    async def hangs(brief, narrative=None, **kwargs):
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(proposer, "propose", hangs)
+    monkeypatch.setattr(graph, "PROPOSER_TIMEOUT_SECONDS", 0.2)
+    state = InvestigationState(normalize_alert(ALERT))
+
+    brief, result = await investigate_via_graph(state.alert, state=state, proposer_node=proposer.proposer_node)
+
+    assert result.status.value == "completed"
+    assert state.node_errors["proposer"].startswith("timed out")
+    assert state.proposal is None and brief.narrative
+
+
+def test_the_model_nodes_are_built_with_their_own_clocks():
+    from fazerops.agents import proposer
+
+    state = InvestigationState(normalize_alert(ALERT))
+    built = build_investigation_graph(state, proposer_node=proposer.proposer_node)
+
+    assert built.nodes["correlator"].executor._timeout == graph.CORRELATOR_TIMEOUT_SECONDS
+    assert built.nodes["proposer"].executor._timeout == graph.PROPOSER_TIMEOUT_SECONDS
+
+
+@pytest.mark.parametrize("clock", ["CORRELATOR_TIMEOUT_SECONDS", "PROPOSER_TIMEOUT_SECONDS"])
+def test_the_model_nodes_clocks_fire_before_the_graphs_backstop(clock):
+    assert getattr(graph, clock) < graph.NODE_TIMEOUT_SECONDS * graph.GRAPH_TIMEOUT_MULTIPLE

@@ -129,6 +129,16 @@ async def test_every_recorded_event_normalizes(fixture_mode):
     assert all(collector._normalize(item) is not None for item in raw)
 
 
+async def test_the_source_ip_is_read_from_the_event_record_not_the_identity(recorded, fixture_mode):
+    """CloudTrail puts `sourceIPAddress` beside `userIdentity`, not inside it. Read from the
+    identity, every event carried no source address although the recording has one on each."""
+    collector = CloudTrailCollector()
+    for raw in recorded:
+        detail = json.loads(raw["CloudTrailEvent"])
+        assert "sourceIPAddress" not in detail["userIdentity"]
+        assert collector._normalize(raw).actor.source_ip == detail["sourceIPAddress"]
+
+
 async def test_the_recorded_events_land_in_the_blast_radius(radius, fixture_mode):
     """The silent failure `keys.py` exists to prevent: an event written under one key and
     queried under another returns nothing, and the brief reports with total confidence that

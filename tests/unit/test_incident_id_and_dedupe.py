@@ -204,6 +204,69 @@ def test_the_automation_webhook_posts_nothing_for_a_re_delivery(monkeypatch, tmp
     assert second["deduplicated"] is True and second["incident_id"] == first["incident_id"]
 
 
+def _automation_app(tmp_path, post, **attributes):
+    from fastapi.testclient import TestClient
+
+    from fazerops.actions.runtime import Response
+    from fazerops.actions.server import build_app
+    from fazerops.pipeline import investigate
+
+    class Automation:
+        state_dir = tmp_path
+        responded = 0
+
+        async def respond(self, alert, *, collectors=None):
+            Automation.responded += 1
+            return Response(brief=await investigate(alert))
+
+    automation = Automation()
+    for name, value in attributes.items():
+        setattr(automation, name, value)
+    return automation, TestClient(build_app(automation, post=post), raise_server_exceptions=False)
+
+
+def test_a_failed_post_releases_the_claim_so_the_re_delivery_posts(tmp_path):
+    """Regression: only a failed investigation released the claim. A Slack rate limit on the post
+    left it "in progress" for the 24h TTL, and every re-delivery was answered 202 with nothing
+    ever posted."""
+    posted: list[str] = []
+    failures = [RuntimeError("slack: ratelimited")]
+
+    def post(blocks, text):
+        if failures:
+            raise failures.pop()
+        posted.append(text)
+
+    automation, client = _automation_app(tmp_path, post)
+
+    assert client.post("/alerts", json=_payload()).status_code == 500
+    retry = client.post("/alerts", json=_payload())
+
+    assert retry.status_code == 200, retry.text
+    assert retry.json()["deduplicated"] is False and retry.json()["posted"] == 1
+    assert automation.responded == 2 and len(posted) == 1
+
+
+def test_a_failure_after_everything_posted_does_not_post_a_second_brief(tmp_path):
+    """The other half: once the brief is in the channel, a re-delivery is answered from it even if
+    bookkeeping after the post raised — releasing the claim there would post the brief twice."""
+
+    class Threads(dict):
+        def __setitem__(self, key, value):
+            raise RuntimeError("bookkeeping failed")
+
+    posted: list[str] = []
+    automation, client = _automation_app(
+        tmp_path, lambda blocks, text: posted.append(text) or {"channel": "C1", "ts": "1.0"}, threads=Threads()
+    )
+
+    assert client.post("/alerts", json=_payload()).status_code == 500
+    retry = client.post("/alerts", json=_payload()).json()
+
+    assert retry["deduplicated"] is True and retry.get("in_progress") is None
+    assert automation.responded == 1 and len(posted) == 1
+
+
 def test_the_text_webhook_investigates_a_firing_once(monkeypatch):
     """Gap 4 (14 Sep): `/webhook/text` was the one endpoint that still investigated every delivery."""
     from fastapi.testclient import TestClient

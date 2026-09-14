@@ -9,7 +9,9 @@ deployment would, with only the cluster, the model and Slack faked.
 from __future__ import annotations
 
 import json
+import secrets
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -18,7 +20,16 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import _sandbox_fakes as fakes  # noqa: E402
-from _growth_events import T0, binary_data_change, brief_for  # noqa: E402
+from _growth_events import (  # noqa: E402
+    HISTORY,
+    MULTI_AFTER,
+    MULTI_BEFORE,
+    T0,
+    binary_data_change,
+    brief_for,
+    configmap_change,
+    production_brief,
+)
 
 from fazerops.actions.growth.signals import GapSignalStore, SignalKind  # noqa: E402
 from fazerops.actions.roster import Roster  # noqa: E402
@@ -103,6 +114,52 @@ async def test_a_decline_is_recorded_and_its_one_shot_reaches_a_card(automation,
     sink(Decision(kind="approve", user_id="U_MGR", **click))
     sink(Decision(kind="approve", user_id="U_MGR", **click))
     assert executions == [pending.action_id]
+
+
+async def test_the_production_path_leaves_a_gap_the_ledger_vouches_for(tmp_path, monkeypatch):
+    """Corroboration checks each signal's incident against the ledger's alert history, so the path
+    that writes signals has to write that history: two declines through `respond`, the hand fixes
+    a collector records later, and the growth job's own fresh read of the state directory — with
+    the ledger signed, as deployed, and a re-delivered firing appending nothing to its chain."""
+    import fazerops.agents.graph as graph_module
+    import fazerops.agents.proposer as proposer_module
+    from fazerops.actions.growth.generate import generate, replay_corpus
+    from fazerops.actions.growth.miner import MinerThresholds, mine_history
+    from fazerops.ledger.chain import Integrity
+    from fazerops.ledger.store import LedgerStore
+
+    key = secrets.token_hex(32)
+    monkeypatch.setenv("FAZEROPS_EVIDENCE_KEY", key)
+    automation = Automation.assemble(state_dir=tmp_path, runner=lambda *args: {}, sandbox=fakes.factory())
+
+    async def declines(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(proposer_module, "propose", declines)
+    briefs = []
+    for number, actor, fired in ((1, "priya", T0), (2, "arun", T0 + timedelta(hours=6))):
+        cause = configmap_change(f"evt-{number}", at=fired - timedelta(minutes=38), actor=actor, before=MULTI_BEFORE, after=MULTI_AFTER)
+        briefs.append(production_brief(f"alert-{number}", cause, fired_at=fired))
+        monkeypatch.setattr(graph_module, "_brief_from", lambda state, narrative, brief=briefs[-1]: brief)
+        await automation.respond(normalize_alert(ALERT))
+        automation.ledger.record(
+            configmap_change(f"fix-{number}", at=fired + timedelta(minutes=9), actor="dinesh", before=MULTI_AFTER, after=MULTI_BEFORE)
+        )
+
+    alerts = tmp_path / "ledger.alerts.jsonl"
+    recorded = alerts.read_text(encoding="utf-8")
+    monkeypatch.setattr(graph_module, "_brief_from", lambda state, narrative: briefs[0])
+    await automation.respond(normalize_alert(ALERT))
+    assert alerts.read_text(encoding="utf-8") == recorded, "a re-delivered firing is recorded once"
+
+    ledger = LedgerStore(tmp_path / "ledger.jsonl", key=key.encode("utf-8"))
+    assert ledger.integrity is Integrity.VERIFIED, ledger.integrity_detail
+    store = GapSignalStore(tmp_path / "gap_signals.jsonl")
+    [gap] = [g for g in mine_history(ledger, store, HISTORY, thresholds=MinerThresholds()) if g.eligible]
+    report = replay_corpus(generate(gap, store).candidate, store, ledger)
+
+    assert report.corroboration.eligible and report.corroboration.uncorroborated == 0, report.corroboration
+    assert report.passed, report
 
 
 def test_the_server_posts_the_brief_and_every_card(automation):

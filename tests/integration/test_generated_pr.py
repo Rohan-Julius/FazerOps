@@ -538,6 +538,50 @@ def test_a_commit_citing_other_events_than_its_attestation_is_rejected(repo, bun
     assert violation.rule is Rule.EVIDENCE_UNVERIFIED and "different events" in violation.detail
 
 
+def _agent_commit_with(repo: Path, record: dict, *, evidence_name: str, entry: str) -> str:
+    """An agent commit adding `entry` to the catalog beside a copy of a signed attestation, citing
+    exactly what it cites — every check that existed before binding passes it."""
+    with (repo / "config/actions.yaml").open("a", encoding="utf-8") as handle:
+        handle.write("\n" + entry)
+    evidence = repo / f"{EVIDENCE_DIR}{evidence_name}.json"
+    evidence.parent.mkdir(parents=True, exist_ok=True)
+    evidence.write_text(json.dumps(record), encoding="utf-8")
+    cites = ", ".join(item["id"] for item in record["cited"])
+    return _commit(repo, f"feat(catalog): propose\n\nCites: {cites}\n\n{AGENT_TRAILER}\n", agent=True)
+
+
+@needs_git
+def test_a_signed_attestation_reused_for_another_catalog_entry_is_rejected(repo, bundle):
+    """Attestations are committed into the repository, so a valid one is there for the copying. It
+    vouches for the entry it was resolved for, not for whatever an agent commit adds beside it."""
+    directory, candidate, _ = bundle
+    record = json.loads((directory / "evidence.json").read_text(encoding="utf-8"))
+    head = _agent_commit_with(
+        repo,
+        record,
+        evidence_name=candidate.candidate_id,
+        entry=(
+            "  - id: patch_anything\n    description: not what was attested\n    writer: k8s/ConfigMap:data\n"
+            "    provisional: true\n    params: {namespace: {type: str}, name: {type: str}}\n"
+        ),
+    )
+
+    [violation] = check_agent_commits(repo, "main", head, evidence_key=KEY)
+    assert violation.rule is Rule.EVIDENCE_UNVERIFIED
+    assert candidate.action_id in violation.detail and "patch_anything" in violation.detail
+
+
+@needs_git
+def test_an_attestation_filed_under_another_name_is_rejected(repo, bundle):
+    directory, candidate, _ = bundle
+    record = json.loads((directory / "evidence.json").read_text(encoding="utf-8"))
+    entry = (directory / "catalog_entry.yaml").read_text(encoding="utf-8")
+    head = _agent_commit_with(repo, record, evidence_name="gap-000000000000", entry=entry)
+
+    [violation] = check_agent_commits(repo, "main", head, evidence_key=KEY)
+    assert violation.rule is Rule.EVIDENCE_UNVERIFIED and candidate.candidate_id in violation.detail
+
+
 @needs_git
 def test_ci_fails_closed_without_the_evidence_key(repo, bundle):
     directory, _, _ = bundle

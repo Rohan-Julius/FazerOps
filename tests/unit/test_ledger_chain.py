@@ -165,6 +165,25 @@ def test_a_torn_final_line_is_dropped_and_repaired_on_the_next_append(signed):
     assert after.integrity is Integrity.VERIFIED and "e4" in after
 
 
+def test_a_trailing_blank_line_does_not_block_the_next_append(signed):
+    """`read()` skips blank lines, so a ledger an editor added a newline to reads VERIFIED. The
+    append must agree, rather than take the blank line as a tail that is not JSON."""
+    with signed.open("a", encoding="utf-8") as handle:
+        handle.write("\n  \n")
+    assert LedgerStore(signed, key=KEY).integrity is Integrity.VERIFIED
+
+    LedgerStore(signed, key=KEY).record(event("e4"))
+    after = LedgerStore(signed, key=KEY)
+    assert after.integrity is Integrity.VERIFIED and "e4" in after
+
+
+def test_a_non_json_last_line_behind_blank_lines_still_refuses_the_append(signed):
+    """Skipping whitespace is not skipping an edit."""
+    write(signed, [*lines(signed), "not json", ""])
+    with pytest.raises(LedgerIntegrityError):
+        LedgerStore(signed, key=KEY).record(event("e4"))
+
+
 def test_two_stores_appending_to_one_file_keep_one_chain(tmp_path):
     """The automation server and the growth job hold separate `LedgerStore`s over the same file.
     A mac remembered in memory would fork the chain on the first interleaving."""

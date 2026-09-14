@@ -42,11 +42,13 @@ from fazerops.actions.growth.lifecycle import (  # noqa: E402
     graduation_progress,
     graduation_status,
     load_lifecycle,
+    record_first_seen,
     retirement_candidates,
 )
 from fazerops.actions.growth.signals import (  # noqa: E402
     GapSignalStore,
     SignalKind,
+    find_remediations,
     outcome_observer,
     signal_for,
 )
@@ -261,6 +263,56 @@ def test_one_human_remediation_after_an_execution_blocks_graduation(tmp_path):
     assert status.graduated is False
 
 
+@pytest.mark.parametrize(
+    "fix",
+    [
+        pytest.param(
+            {"actor": "oncall@faber-demo.io", "actor_kind": "unknown", "before": MULTI_BEFORE, "after": MULTI_AFTER},
+            id="an-on-call-missing-from-the-identity-map",
+        ),
+        pytest.param({"before": None, "after": MULTI_AFTER}, id="no-captured-prior-value"),
+        pytest.param({"before": None, "after": None}, id="no-diff-at-all"),
+    ],
+)
+def test_a_hand_fix_contests_even_when_it_could_never_be_a_demonstration(tmp_path, fix):
+    """The contest check is not the demonstration filter. A hand-fix by someone the identity map
+    does not name, or through a path that recorded no prior value, is still a hand-fix — reading it
+    as none would graduate the action exactly where the evidence is thinnest."""
+    world = _world(tmp_path)
+    for day in (1, 2, 3):
+        executed = _executed_on_day(world, day)
+    world.ledger.record(configmap_change("hand-fix", at=executed.observed_at + timedelta(minutes=10), **fix))
+
+    assert list(find_remediations(world.ledger, [executed], window_minutes=60)) == [], "still not a demonstration"
+    status = graduation_status(ACTION, world.store, world.ledger, now=BASE + timedelta(days=5), config=CONFIG)
+    assert (status.confirmed, status.contested, status.graduated) == (2, 1, False)
+
+
+@pytest.mark.parametrize(
+    "actor",
+    ["fazerops:approved-by:U_MGR", "system:serviceaccount:argocd:argocd-application-controller"],
+)
+def test_automation_touching_the_resource_does_not_contest(tmp_path, actor):
+    """The execution's own write reaching the audit log, or a controller reconciling, is not a
+    human's verdict on the action."""
+    world = _world(tmp_path)
+    _executed_on_day(world, 1)
+    executed = _executed_on_day(world, 2)
+    world.ledger.record(
+        configmap_change(
+            "reconcile",
+            at=executed.observed_at + timedelta(minutes=5),
+            actor=actor,
+            actor_kind="service_account",
+            before=MULTI_AFTER,
+            after=MULTI_BEFORE,
+        )
+    )
+
+    status = graduation_status(ACTION, world.store, world.ledger, now=BASE + timedelta(days=5), config=CONFIG)
+    assert (status.confirmed, status.contested, status.graduated) == (2, 0, True)
+
+
 def test_a_change_after_the_quiet_period_does_not_contest(tmp_path):
     world = _world(tmp_path)
     _executed_on_day(world, 1)
@@ -315,16 +367,60 @@ def test_a_retired_action_cannot_be_approved(tmp_path):
         ApprovalGateway(catalog=catalog, runner=_Runner()).register("INC-1", request, evidence=EVIDENCE)
 
 
+def _incident_on_day(world, day: int) -> str:
+    """An incident the action was not used in — a decline over another change, placed in time."""
+    at = BASE + timedelta(days=day)
+    world.store.record(
+        signal_for(SignalKind.DECLINE, multi_key_change(f"other-{day}", at=at), incident_id=f"INC-{day}", observed_at=at)
+    )
+    return f"INC-{day}"
+
+
 def test_retirement_recommends_only_generated_actions_unused_across_n_incidents(tmp_path):
     world = _world(tmp_path)
-    _execute(world, 1)
+    _executed_on_day(world, 1)
+    for day in range(2, 7):
+        _incident_on_day(world, day)
+    available = {ACTION: BASE}
 
-    assert retirement_candidates(world.catalog, world.store, ["INC-1", "INC-2", "INC-3"], config=CONFIG) == []
-    assert retirement_candidates(world.catalog, world.store, ["INC-4", "INC-5", "INC-6"], config=CONFIG) == [ACTION]
-    assert retirement_candidates(world.catalog, world.store, ["INC-5", "INC-6"], config=CONFIG) == []
+    def candidates(incidents):
+        return retirement_candidates(world.catalog, world.store, incidents, available_since=available, config=CONFIG)
+
+    assert candidates(["INC-1", "INC-2", "INC-3"]) == []
+    assert candidates(["INC-4", "INC-5", "INC-6"]) == [ACTION]
+    assert candidates(["INC-5", "INC-6"]) == []
 
 
 def test_the_handoff_actions_are_never_recommended_for_retirement(tmp_path):
-    catalog = _catalog(tmp_path)
-    recommended = retirement_candidates(catalog, GapSignalStore(), ["a", "b", "c"], config=CONFIG)
+    world = _world(tmp_path)
+    incidents = [_incident_on_day(world, day) for day in (1, 2, 3)]
+    available = {action.id: BASE for action in world.catalog}
+
+    recommended = retirement_candidates(world.catalog, world.store, incidents, available_since=available, config=CONFIG)
     assert recommended == [ACTION]
+
+
+def test_incidents_from_before_an_action_existed_do_not_retire_it(tmp_path):
+    """Merged after N quiet incidents is not unused across N incidents: it did not exist for them."""
+    world = _world(tmp_path)
+    incidents = [_incident_on_day(world, day) for day in (1, 2, 3, 4)]
+    merged = {ACTION: BASE + timedelta(days=2, hours=12)}
+
+    assert retirement_candidates(world.catalog, world.store, incidents, available_since=merged, config=CONFIG) == []
+
+    incidents.append(_incident_on_day(world, 5))  # the third incident since it became available
+    assert retirement_candidates(world.catalog, world.store, incidents, available_since=merged, config=CONFIG) == [ACTION]
+
+
+def test_an_action_with_no_recorded_availability_is_never_recommended(tmp_path):
+    world = _world(tmp_path)
+    incidents = [_incident_on_day(world, day) for day in (1, 2, 3, 4)]
+    assert retirement_candidates(world.catalog, world.store, incidents, available_since={}, config=CONFIG) == []
+
+
+def test_first_seen_is_stamped_once_and_never_moves(tmp_path):
+    catalog = _catalog(tmp_path)
+    path = tmp_path / "state" / "catalog_first_seen.json"
+
+    assert record_first_seen(catalog, path, now=BASE) == {ACTION: BASE}, "only writer-backed actions"
+    assert record_first_seen(catalog, path, now=BASE + timedelta(days=30)) == {ACTION: BASE}

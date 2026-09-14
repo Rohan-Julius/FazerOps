@@ -404,10 +404,16 @@ async def test_a_rejected_proposal_costs_the_proposal_and_not_the_graph(monkeypa
 
     monkeypatch.setattr(proposer_module, "propose", always_rejects)
 
+    from fazerops.agents.graph import InvestigationState
+
     payload = json.loads((FIXTURE_ALERTS / "alertmanager.json").read_text(encoding="utf-8"))
+    state = InvestigationState(normalize_alert(payload))
     brief, result = await investigate_via_graph(
-        normalize_alert(payload), proposer_node=proposer_module.proposer_node
+        state.alert, proposer_node=proposer_module.proposer_node, state=state
     )
 
     assert brief.candidates, "the investigation survives a rejected proposal"
-    assert brief.degraded is True, "and says so rather than hiding it"
+    # Says so by name rather than hiding it — but not as a degraded brief. `degraded` renders as
+    # "a change source was unavailable", and every source answered.
+    assert state.node_errors["proposer"] == "synthetic rejection"
+    assert brief.degraded is False

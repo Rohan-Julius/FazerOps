@@ -65,3 +65,20 @@ async def test_a_healthy_brief_logs_nothing(tmp_path, caplog):
 
     assert not response.brief.degraded
     assert not [r for r in caplog.records if "degraded brief" in r.getMessage()]
+
+
+async def test_a_failed_proposer_is_logged_though_the_brief_is_not_degraded(tmp_path, caplog, monkeypatch):
+    """A correlator or proposer failure costs the brief its narrative or its action, not a source,
+    so it no longer marks the brief degraded (`graph.ANNOTATION_NODES`). The log still says why."""
+    import fazerops.agents.proposer as proposer_module
+
+    async def fails(*args, **kwargs):
+        raise ValueError("the proposal cited evidence the brief does not hold")
+
+    monkeypatch.setattr(proposer_module, "propose", fails)
+    with caplog.at_level(logging.WARNING, logger="fazerops.actions.runtime"):
+        response = await _automation(tmp_path).respond(normalize_alert(ALERT))
+
+    assert not response.brief.degraded
+    [line] = [r.getMessage() for r in caplog.records if "node errors" in r.getMessage()]
+    assert "degraded" not in line and "proposer" in line and "does not hold" in line

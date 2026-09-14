@@ -197,6 +197,22 @@ def test_a_truncated_final_line_does_not_lose_the_history(tmp_path):
     assert GapSignalStore(path).signals() == [signal]
 
 
+def test_an_append_after_a_torn_final_line_keeps_the_new_record(tmp_path):
+    """Written onto the end of the torn line, the next record would be unparseable with it — and a
+    signal the server recorded at incident time is never observed a second time."""
+    path = tmp_path / "gap_signals.jsonl"
+    first = decline_signal(brief_for("INC-1", multi_key_change("evt-1", at=CAUSE_AT)))
+    GapSignalStore(path).record(first)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write('{"kind": "decl')
+
+    after_crash = decline_signal(brief_for("INC-2", multi_key_change("evt-2", at=CAUSE_AT)))
+    GapSignalStore(path).record(after_crash)
+
+    assert {s.id for s in GapSignalStore(path).signals()} == {first.id, after_crash.id}
+    assert len(path.read_text(encoding="utf-8").splitlines()) == 2
+
+
 # --------------------------------------------------------------------------------------
 # The demonstration corpus — persisted, not counted
 # --------------------------------------------------------------------------------------

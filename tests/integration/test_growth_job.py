@@ -105,6 +105,9 @@ def test_the_cli_runs_the_job_against_a_state_directory(tmp_path, monkeypatch, c
     monkeypatch.setenv(EVIDENCE_KEY_ENV, KEY.decode())
     durable = LedgerStore(tmp_path / "ledger.jsonl")
     durable.extend(ledger._events.values())
+    # The firings too: the job corroborates every signal's incident against them.
+    for alert in ledger._alerts.values():
+        durable.record_alert(alert)
 
     code = main(
         [
@@ -205,7 +208,10 @@ def test_the_cli_commits_attested_bundles(tmp_path, monkeypatch, capsys):
     state = tmp_path / "state"
     ledger, _, _ = gap_with_corpus(store_path=state / "gap_signals.jsonl")
     monkeypatch.setenv(EVIDENCE_KEY_ENV, KEY.decode())
-    LedgerStore(state / "ledger.jsonl").extend(ledger._events.values())
+    durable = LedgerStore(state / "ledger.jsonl")
+    durable.extend(ledger._events.values())
+    for alert in ledger._alerts.values():
+        durable.record_alert(alert)
 
     code = main(
         [
@@ -293,6 +299,40 @@ async def test_a_forge_that_refuses_leaves_the_branch_for_the_next_cycle(tmp_pat
     )
     assert outcome.status is CycleStatus.PR_FAILED and "503" in outcome.detail
     assert outcome.branch in _git(clone, "branch", "--list")
+
+
+@needs_git
+async def test_a_branch_that_fails_the_check_is_never_pushed_on_a_later_cycle(tmp_path):
+    """A rejected branch is left where it is, so the next cycle finds it already committed. It is
+    checked again rather than trusted for existing — here, a branch that passed when committed and
+    has since gained an agent commit outside the catalog."""
+    from fazerops.actions.growth.pr import AGENT_TRAILER
+
+    clone, remote = _repo_with_remote(tmp_path)
+    ledger, store, _ = gap_with_corpus()
+    opened: list[str] = []
+
+    def opener(repo, branch, bundle, *, base_branch, remote):
+        opened.append(branch)
+        return "https://github.com/acme/fazerops-demo/pull/7"
+
+    arguments = {"out_dir": tmp_path / "p", "evidence_key": KEY, "repo": clone, "base": "main", "opener": opener, "thresholds": THRESHOLDS}
+    [committed] = await run_cycle(ledger, store, HISTORY, **arguments)
+    assert committed.status is CycleStatus.COMMITTED, committed.detail
+
+    _git(clone, "checkout", "-q", committed.branch)
+    (clone / "README.md").write_text("an agent wrote this\n", encoding="utf-8")
+    _git(clone, "add", "-A")
+    _git(clone, "commit", "-q", "-m", f"docs: helpful\n\n{AGENT_TRAILER}\n")
+    _git(clone, "checkout", "-q", "main")
+
+    [pushed] = await run_cycle(ledger, store, HISTORY, **arguments, open_prs=True)
+    [again] = await run_cycle(ledger, store, HISTORY, **arguments)
+
+    assert (pushed.status, again.status) == (CycleStatus.COMMIT_REJECTED, CycleStatus.COMMIT_REJECTED)
+    assert "path_not_allowed" in pushed.detail
+    assert opened == [], "the opener was never asked to push the rejected branch"
+    assert "catalog-growth" not in _git(remote, "branch", "--list")
 
 
 def test_the_schedule_keeps_running_after_a_failed_cycle(tmp_path, monkeypatch):

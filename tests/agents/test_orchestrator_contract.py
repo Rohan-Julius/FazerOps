@@ -276,3 +276,64 @@ async def test_a_missing_orchestrator_cassette_degrades_rather_than_raising(monk
     assert plan.window.hours == 4
     assert plan.degraded is True, "a missing tape must never read as success"
     assert plan.note and "cassette" in plan.note
+
+
+# --------------------------------------------------------------------------------------
+# Spend before a failure still reaches the meter
+# --------------------------------------------------------------------------------------
+
+
+class _FailsOnSecondTurn(ScriptedModel):
+    """One real, metered tool turn, then `failure` — an exception, or a hang."""
+
+    def __init__(self, failure):
+        super().__init__([("tool", "resolve_blast_radius", {"service": "billing-api"})])
+        self._failure = failure
+
+    async def stream(self, messages, tool_specs=None, system_prompt=None, **kwargs):
+        if self._index >= 1:
+            await self._failure()
+        async for event in super().stream(messages, tool_specs, system_prompt, **kwargs):
+            yield event
+
+
+@pytest.mark.asyncio
+async def test_turns_billed_before_an_exception_are_metered(gemini_mode, tmp_path):
+    """A 429 escaping the loop after a completed turn. `result` was `None`, and the meter was
+    skipped — the retrying loop `TokenMeter` exists to catch left no ledger line."""
+    from fazerops.agents.budget import TokenMeter
+
+    async def throttled():
+        raise RuntimeError("429 Too Many Requests")
+
+    meter = TokenMeter(ledger_path=tmp_path / "token_ledger.jsonl")
+    session = OrchestrationSession(demo_alert())
+
+    plan = await orchestrate(demo_alert(), session=session, meter=meter, model_client=_FailsOnSecondTurn(throttled))
+
+    # Strands wraps the provider's error in its own `EventLoopException`, so the note names that.
+    assert plan.degraded is True and "did not finish" in (plan.note or "")
+    assert [(c["agent"], c["in"], c["out"]) for c in meter.calls] == [("orchestrator", 120, 30)]
+
+
+@pytest.mark.asyncio
+async def test_turns_billed_before_the_nodes_timeout_are_metered(gemini_mode, tmp_path):
+    """The graph node cancels a slow orchestrator (`ORCHESTRATOR_TIMEOUT_SECONDS`). The turns it
+    completed were billed; the cancellation still propagates, so the node still times out."""
+    import asyncio
+
+    from fazerops.agents.budget import TokenMeter
+
+    async def hangs():
+        await asyncio.sleep(60)
+
+    meter = TokenMeter(ledger_path=tmp_path / "token_ledger.jsonl")
+    session = OrchestrationSession(demo_alert())
+
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(
+            orchestrate(demo_alert(), session=session, meter=meter, model_client=_FailsOnSecondTurn(hangs)),
+            timeout=0.5,
+        )
+
+    assert [(c["agent"], c["in"], c["out"]) for c in meter.calls] == [("orchestrator", 120, 30)]

@@ -23,6 +23,7 @@ from fazerops.models import (
     NormalizedAction,
     ResourceRef,
     TimeWindow,
+    incident_id_for,
 )
 
 T0 = datetime(2026, 9, 6, 14, 41, tzinfo=timezone.utc)
@@ -192,7 +193,10 @@ def gap_with_corpus(
                     after=(fixes or {}).get(number, cause_before),
                 )
             )
-        store.record(decline_signal(brief_for(f"INC-{number}", cause, fired_at=fired_at)))
+        brief = production_brief(f"alert-{number}", cause, fired_at=fired_at)
+        # As `Automation.respond` does: the firing is in the ledger beside the changes it ranked.
+        ledger.record_alert(brief.alert)
+        store.record(decline_signal(brief))
 
     gaps = mine_history(ledger, store, HISTORY, thresholds=MinerThresholds())
     [gap] = [gap for gap in gaps if gap.eligible]
@@ -214,7 +218,9 @@ def binary_gap_with_corpus(*, store_path=None):
                 f"binfix-{number}", at=fired_at + timedelta(minutes=9), actor="dinesh", before=BINARY_AFTER, after=BINARY_BEFORE
             )
         )
-        store.record(decline_signal(brief_for(f"INC-B{number}", cause, fired_at=fired_at)))
+        brief = production_brief(f"alert-b{number}", cause, fired_at=fired_at)
+        ledger.record_alert(brief.alert)
+        store.record(decline_signal(brief))
 
     [gap] = [gap for gap in mine_history(ledger, store, HISTORY, thresholds=MinerThresholds()) if gap.eligible]
     return ledger, store, gap
@@ -240,3 +246,10 @@ def brief_for(incident_id: str, *events: ChangeEvent, fired_at: datetime = T0) -
         ],
         ci_status=CIStatus(merge_count=0),
     )
+
+
+def production_brief(alert_id: str, *events: ChangeEvent, fired_at: datetime = T0) -> Brief:
+    """`brief_for`, with the incident id production gives a brief — `incident_id_for` of its alert —
+    so a signal drawn from it names an incident a ledger can hold (`generate.corroborate`)."""
+    brief = brief_for(alert_id, *events, fired_at=fired_at)
+    return brief.model_copy(update={"incident_id": incident_id_for(brief.alert)})

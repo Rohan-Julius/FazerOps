@@ -226,6 +226,30 @@ async def test_a_failing_collector_does_not_cost_the_other_three_their_events():
 
 
 @pytest.mark.asyncio
+async def test_a_rejected_narrative_on_a_quiet_window_does_not_degrade_the_brief():
+    """Every source answered with nothing, so the correlator has no candidate to name and
+    rejects the narrative. The brief printed "a change source was unavailable" over that — the
+    one false thing to say on the honest "nothing changed" brief. The rejection is still kept
+    by name."""
+
+    class Quiet:
+        def __init__(self, source: str) -> None:
+            self.source = source
+
+        async def fetch(self, radius, window):
+            return CollectorResult(self.source, [])
+
+    state = InvestigationState(demo_alert())
+    brief, _ = await investigate_via_graph(
+        demo_alert(), collectors=[Quiet(name) for name in COLLECTOR_NODES], state=state
+    )
+
+    assert "no candidates" in state.node_errors["correlator"]
+    assert state.degraded is False
+    assert brief.degraded is False and brief.candidates == []
+
+
+@pytest.mark.asyncio
 async def test_function_node_records_the_failure_by_name():
     """The node absorbs the exception, but it does not swallow it — a node that silently
     turns a broken source into "nothing changed" is the failure mode this project exists

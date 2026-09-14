@@ -328,6 +328,71 @@ def test_the_credential_the_gateway_mints_survives_the_real_gate():
         )
 
 
+def test_two_concurrent_approvals_execute_once_and_the_second_is_the_replay():
+    """Regression: the replay check read the outcome table, and nothing wrote to it until the
+    mutation finished — so two deliveries of one click on two Socket Mode pool threads both
+    passed the check, both minted, and both ran. The runner holds the first call inside the
+    mutation until the second has had every chance to overtake it."""
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+
+    class SlowRunner(Runner):
+        def __call__(self, request, credential, evidence):
+            started.set()
+            release.wait(timeout=5)
+            return super().__call__(request, credential, evidence)
+
+    runner = SlowRunner()
+    gateway = ApprovalGateway(runner=runner)
+    pending = gateway.register(INCIDENT, a_request(), evidence=EVIDENCE)
+    outcomes = []
+
+    def click():
+        outcomes.append(
+            gateway.decide(
+                incident_id=INCIDENT, action_id=pending.action_id, approver=IC, kind="approve", dry_run_digest=pending.digest
+            )
+        )
+
+    first = threading.Thread(target=click)
+    first.start()
+    assert started.wait(timeout=5)
+    second = threading.Thread(target=click)
+    second.start()
+    second.join(timeout=0.3)
+    assert second.is_alive(), "the second click did not wait for the first to finish"
+    release.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert runner.count == 1, "two concurrent clicks executed two mutations"
+    assert sorted(outcome.replay for outcome in outcomes) == [False, True]
+    assert outcomes[0].decided_at == outcomes[1].decided_at
+
+
+def test_a_call_that_records_nothing_releases_its_claim(gateway_and_runner, monkeypatch):
+    """A mint that raised ran nothing and recorded nothing; the claim must not outlive it, or
+    every retry of an STS blip would wait forever."""
+    from fazerops.actions import approval
+
+    gateway, runner = gateway_and_runner
+    gateway.register(INCIDENT, a_request(), evidence=EVIDENCE)
+    real_mint = approval.mint_actor_credential
+
+    def flaky(**kwargs):
+        monkeypatch.setattr(approval, "mint_actor_credential", real_mint)
+        raise RuntimeError("sts unreachable")
+
+    monkeypatch.setattr(approval, "mint_actor_credential", flaky)
+    with pytest.raises(RuntimeError, match="sts unreachable"):
+        gateway.decide(incident_id=INCIDENT, action_id="revert_configmap_key", approver=IC, kind="approve")
+    assert gateway.outcome(INCIDENT, "revert_configmap_key") is None
+
+    outcome = gateway.decide(incident_id=INCIDENT, action_id="revert_configmap_key", approver=IC, kind="approve")
+    assert outcome.executed is True and outcome.replay is False and runner.count == 1
+
+
 def test_the_scope_is_derived_from_the_action_not_supplied_by_the_caller():
     """A caller that could name the scope could widen the credential past the action it was
     approved for."""

@@ -77,6 +77,54 @@ def test_inverse_of_reverting_pool_max_to_100_restores_20():
     }
 
 
+def _proposal(action_id, params, *cited):
+    from types import SimpleNamespace
+
+    candidates = [SimpleNamespace(event=SimpleNamespace(id=event_id, inverse_hint=hint)) for event_id, hint in cited]
+    proposal = SimpleNamespace(action_id=action_id, params=params, evidence_ids=[event_id for event_id, _ in cited])
+    return proposal, candidates
+
+
+def test_a_proposal_naming_another_configmap_does_not_borrow_the_cited_changes_hint():
+    """Regression: the hint was matched on `action_id` alone, so a proposal on `api-cfg` citing
+    `billing-api-config`'s change rendered that change's `20` as `api-cfg`'s "before" and recorded
+    it as the inverse. No hint means no inverse, which is ground rule #4's refusal."""
+    from fazerops.actions.inverse import request_for_proposal
+
+    params = {"namespace": "billing", "name": "api-cfg", "key": "timeout", "target_value": "999"}
+    request = request_for_proposal(*_proposal("revert_configmap_key", params, ("e-1", CONFIGMAP_HINT)))
+
+    assert request.inverse_hint is None
+    assert inverse(request) is None
+
+    other_key = {**params, "name": "billing-api-config"}
+    assert request_for_proposal(*_proposal("revert_configmap_key", other_key, ("e-1", CONFIGMAP_HINT))).inverse_hint is None
+
+
+def test_a_proposal_takes_the_hint_of_the_cited_change_on_its_own_resource():
+    from fazerops.actions.inverse import request_for_proposal
+
+    elsewhere = {**CONFIGMAP_HINT, "name": "pool-cfg", "current_value": "5"}
+    params = {"namespace": "billing", "name": "billing-api-config", "key": "pool.max", "target_value": "100"}
+    request = request_for_proposal(
+        *_proposal("revert_configmap_key", params, ("e-0", elsewhere), ("e-1", CONFIGMAP_HINT))
+    )
+
+    assert request.inverse_hint == CONFIGMAP_HINT
+    assert inverse(request).params["target_value"] == "20"
+
+
+def test_a_db_parameter_proposal_does_not_borrow_another_parameters_hint():
+    from fazerops.actions.inverse import request_for_proposal
+
+    params = {"parameter_group": "billing-primary-params", "parameter": "work_mem", "target_value": "64"}
+    request = request_for_proposal(*_proposal("restore_db_parameter", params, ("e-2", RDS_HINT)))
+
+    assert request.inverse_hint is None and inverse(request) is None
+    matching = {**params, "parameter": "max_connections"}
+    assert request_for_proposal(*_proposal("restore_db_parameter", matching, ("e-2", RDS_HINT))).inverse_hint == RDS_HINT
+
+
 def test_the_inverse_is_fully_parameterized():
     """Every required parameter present, not just the one that changed.
 

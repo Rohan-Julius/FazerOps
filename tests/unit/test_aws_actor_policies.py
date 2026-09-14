@@ -53,6 +53,34 @@ def sent_tags(monkeypatch) -> list[dict]:
     return calls[0]["Tags"]
 
 
+def test_the_role_session_name_fits_the_sts_pattern_for_an_alarm_name_with_spaces(monkeypatch):
+    """Regression: `RoleSessionName` carried the incident id raw, and a CloudWatch `AlarmName` may
+    hold spaces — STS refuses that server-side (botocore checks only length), so every approval for
+    such an alarm failed. The pattern and bounds are botocore's `roleSessionNameType`."""
+    import re
+
+    monkeypatch.setenv("FAZEROPS_MODE", "live")
+    calls: list[dict] = []
+
+    class STS:
+        def assume_role(self, **kwargs):
+            calls.append(kwargs)
+            return {"Credentials": {"AccessKeyId": "synthetic", "SecretAccessKey": "synthetic", "SessionToken": "synthetic"}}
+
+    credentials._assume(
+        STS(),
+        role_arn="arn:aws:iam::111122223333:role/fazerops-actor",
+        namespace="billing-primary-params",
+        action_id="restore_db_parameter",
+        incident_id="INC-billing db pool exhausted/café-20260914T100000Z",
+        approver="U0MGR",
+    )
+
+    name = calls[0]["RoleSessionName"]
+    assert re.fullmatch(r"[A-Za-z0-9_+=,.@-]{2,64}", name), name
+    assert name.startswith("fazerops-INC-billing-db-pool-exhausted")
+
+
 def test_assuming_requires_a_slack_source_identity():
     trust = _load("fazerops-actor-trust-policy.json")
     for action in ("sts:AssumeRole", "sts:SetSourceIdentity"):
