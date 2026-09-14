@@ -16,7 +16,7 @@
 
 actions:
   - id: revert_configmap_key
-    tier: 1
+    tier: 0
     description: Restore a single ConfigMap key to a prior value
     params:
       namespace: {type: str, required: true}
