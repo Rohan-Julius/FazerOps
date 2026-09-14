@@ -136,6 +136,16 @@ class Automation:
         brief, _ = await investigate_via_graph(alert, collectors=collectors, proposer_node=node)
 
         state = states[0] if states else None
+        if brief.degraded and state is not None:
+            # The brief carries only the flag. Without this, "a change source was unavailable"
+            # cannot be traced to a source once the process's state is gone (W31, 14 Sep).
+            failed = {result.source: result.error for result in state.results if not result.ok}
+            logger.warning(
+                "degraded brief %s: failed sources %s, node errors %s",
+                brief.incident_id,
+                failed,
+                state.node_errors,
+            )
         response = Response(
             brief=brief,
             proposal=getattr(state, "proposal", None),
