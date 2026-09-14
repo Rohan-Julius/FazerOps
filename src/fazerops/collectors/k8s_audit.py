@@ -25,7 +25,8 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -97,9 +98,13 @@ class K8sAuditCollector(BaseCollector):
                 f"no Kubernetes audit log at {path}. Run scripts/setup_k3d.sh, or set "
                 f"{AUDIT_LOG_ENV} to the log's location."
             )
-        return list(self._read_log(path, window))
+        # The API server rotates the log at 64MB and keeps one backup (`setup_k3d.sh`). An object's
+        # last body before a rotation lives only in the backup, and so does any in-window change
+        # made before it: read without the backup, the first edit after a rotation has no prior
+        # value and nothing to revert. Found live 14 Sep, when a revert card never appeared.
+        return list(self._read_log([*rotated_logs(path), path], window))
 
-    def _read_log(self, path: Path, window: TimeWindow) -> Iterator[dict[str, Any]]:
+    def _read_log(self, paths: Sequence[Path], window: TimeWindow) -> Iterator[dict[str, Any]]:
         """Everything `_prepare` needs, and nothing else.
 
         The audit log is every request the cluster served, capped at 64MB by the flags in
@@ -114,7 +119,7 @@ class K8sAuditCollector(BaseCollector):
         anchors: dict[tuple[str, str, str], dict[str, Any]] = {}
         in_window: list[dict[str, Any]] = []
 
-        with path.open(encoding="utf-8") as handle:
+        with _joined(paths) as handle:
             for line in handle:
                 line = line.strip()
                 if not line:
@@ -322,6 +327,30 @@ class K8sAuditCollector(BaseCollector):
             "prior_value": (diff.before or {}).get(key),
             "current_value": (diff.after or {}).get(key),
         }
+
+
+def rotated_logs(path: Path) -> list[Path]:
+    """The API server's rotated backups of `path`, oldest first.
+
+    The server names a backup `<stem>-<UTC timestamp><suffix>`, so name order is time order.
+    """
+    return sorted(candidate for candidate in path.parent.glob(f"{path.stem}-*{path.suffix}") if candidate.is_file())
+
+
+@contextmanager
+def _joined(paths: Sequence[Path]) -> Iterator[Iterator[str]]:
+    """The lines of every log in order, as one stream. A backup deleted mid-read (the server keeps
+    only one) is skipped: what it held is gone either way, and the live file still reads."""
+
+    def lines() -> Iterator[str]:
+        for path in paths:
+            try:
+                with path.open(encoding="utf-8") as handle:
+                    yield from handle
+            except FileNotFoundError:
+                continue
+
+    yield lines()
 
 
 def audit_log_path() -> Path:
