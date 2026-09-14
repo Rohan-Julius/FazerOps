@@ -21,10 +21,12 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      - run: uv sync --dev
+      # The suite imports every extra's SDK; `run_demo.sh` itself needs none of them.
+      - run: uv sync --dev --extra slack --extra gemini --extra cluster
 
       - name: Zero-credential, zero-network suite
-        run: uv run pytest -m "not cluster" -q
+        # The three live markers need a cluster, AWS credentials or a GitHub token; the runner has none.
+        run: uv run pytest -m "not cluster and not aws and not github" -q
 
       - name: Layer seam (plan §3.5 — never allowed to go red)
         run: uv run pytest tests/integration/test_layer_seam.py -q
@@ -53,7 +55,8 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      - run: uv sync --dev
+      # The suite imports every extra's SDK; `run_demo.sh` itself needs none of them.
+      - run: uv sync --dev --extra slack --extra gemini --extra cluster
 
       - name: Agent-authored commits grant nothing
         run: uv run python scripts/check_generated_pr.py commits --base "origin/$BASE_REF" --head HEAD
@@ -69,7 +72,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: uv sync --dev
+      # The suite imports every extra's SDK; `run_demo.sh` itself needs none of them.
+      - run: uv sync --dev --extra slack --extra gemini --extra cluster
       - run: uv run pytest tests/test_no_secrets.py -q
 
       - name: gitleaks
