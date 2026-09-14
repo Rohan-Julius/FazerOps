@@ -69,3 +69,16 @@ def test_the_demo_alert_names_a_service_the_manifest_knows():
     assert first.service == "auth-service"
     assert first.id != second.id, "each staged incident is its own incident"
     json.dumps(alert_payload())
+
+
+@pytest.mark.parametrize("story, service", [("auth", "auth-service"), ("binary", "auth-service"), ("billing", "billing-api")])
+def test_each_story_alert_names_its_own_service(story, service):
+    """Each staged story's alert resolves the radius its change lives in — the billing story's
+    `pool.max` edit is invisible to an auth-service alert."""
+    from demo_world import alert_payload
+
+    from fazerops.ingest.alerts import normalize_alert
+
+    alert = normalize_alert(alert_payload(story=story))
+    assert alert.service == service
+    assert ServiceManifest.load().keys_for(service)
