@@ -1,243 +1,173 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1190" viewBox="0 0 1600 1190" role="img" aria-labelledby="t d">
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1110" viewBox="0 0 1600 1110" role="img" aria-labelledby="t d">
 <title id="t">FazerOps architecture</title>
 <desc id="d">An alert starts a read-only investigation in one Strands Graph: an orchestrator agent, four deterministic collectors in one concurrent batch, a change ledger, Python scoring and a correlator agent produce a Brief. Only the Brief crosses the layer seam into automation, where a proposer agent selects a catalog action, a dry run and inverse are computed, a human approves on a Slack card, and a scoped executor runs it. Catalog growth mines gaps from production evidence.</desc>
-<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#334155"/></marker><marker id="arrp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker><marker id="arrr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker></defs>
-<rect width="1600" height="1190" fill="#ffffff"/>
-<text xml:space="preserve" x="40" y="54" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="27" font-weight="800" fill="#0f172a" text-anchor="start" letter-spacing="-0.3">FazerOps architecture</text>
-<text xml:space="preserve" x="40" y="82" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="400" fill="#475569" text-anchor="start">Tier 0 investigates on its own and changes nothing. Every mutation waits for a human approval.</text>
-<rect x="770" y="39" width="22" height="14" rx="4" fill="#fff" stroke="#7c3aed" stroke-width="2"/>
-<text xml:space="preserve" x="800" y="50" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#0f172a" text-anchor="start">Agent · calls a model</text>
-<rect x="962.6" y="39" width="22" height="14" rx="4" fill="#fff" stroke="#64748b" stroke-width="2"/>
-<text xml:space="preserve" x="992.6" y="50" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#0f172a" text-anchor="start">Python · deterministic</text>
-<rect x="1161.8" y="39" width="22" height="14" rx="4" fill="#fff" stroke="#15803d" stroke-width="2"/>
-<text xml:space="preserve" x="1191.8" y="50" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#0f172a" text-anchor="start">Human decision</text>
-<rect x="1308.1999999999998" y="39" width="22" height="14" rx="4" fill="#fff" stroke="#0f766e" stroke-width="2"/>
-<text xml:space="preserve" x="1338.1999999999998" y="50" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#0f172a" text-anchor="start">Store</text>
-<line x1="1395.1999999999998" y1="46" x2="1417.1999999999998" y2="46" stroke="#dc2626" stroke-width="2" stroke-dasharray="5 4"/>
-<text xml:space="preserve" x="1425.1999999999998" y="50" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#0f172a" text-anchor="start">Layer seam</text>
-<rect x="270" y="110" width="1290" height="440" rx="18" fill="#f3f7ff" stroke="#c7d7f5" stroke-width="1.4"/>
-<text xml:space="preserve" x="290" y="137" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="800" fill="#1d4ed8" text-anchor="start" letter-spacing="1.1">INVESTIGATION · TIER 0 · READ-ONLY</text>
-<text xml:space="preserve" x="1540" y="137" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="500" fill="#1d4ed8" text-anchor="end">one Strands Graph · runs locally and on AgentCore Runtime</text>
-<rect x="40" y="160" width="205" height="175" rx="12" fill="#ffffff" stroke="#334155" stroke-width="1.6"/>
-<rect x="54" y="174" width="47" height="18" rx="9" fill="#334155" fill-opacity="0.12"/>
-<text xml:space="preserve" x="61" y="187" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#334155" text-anchor="start" letter-spacing="0.7">INPUT</text>
-<text xml:space="preserve" x="56" y="214" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">Alert webhook</text>
-<text xml:space="preserve" x="56" y="236" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">Alertmanager · CloudWatch ·</text>
-<text xml:space="preserve" x="56" y="254" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">PagerDuty payload shapes</text>
-<text xml:space="preserve" x="56" y="272" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">deduped per firing</text>
-<text xml:space="preserve" x="56" y="290" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">classified by rules, no model</text>
-<text xml:space="preserve" x="56" y="308" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="400" fill="#0f172a" text-anchor="start">INC-{alert}-{fired_at}</text>
-<rect x="40" y="365" width="205" height="155" rx="12" fill="#ffffff" stroke="#d97706" stroke-dasharray="6 5" stroke-width="1.6"/>
-<text xml:space="preserve" x="54" y="389" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="start">Untrusted-data envelope</text>
-<text xml:space="preserve" x="54" y="408" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">Alert, log and diff text</text>
-<text xml:space="preserve" x="54" y="424" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">reaches every model as data,</text>
-<text xml:space="preserve" x="54" y="440" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">never as instruction:</text>
-<text xml:space="preserve" x="54" y="456" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">escaped, size-budgeted, and</text>
-<text xml:space="preserve" x="54" y="472" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">marked when it was trimmed.</text>
-<text xml:space="preserve" x="54" y="488" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">Nothing dispatches from it.</text>
-<rect x="295" y="160" width="230" height="190" rx="12" fill="#ffffff" stroke="#7c3aed" stroke-width="2.2"/>
-<rect x="309" y="174" width="153" height="18" rx="9" fill="#7c3aed" fill-opacity="0.12"/>
-<text xml:space="preserve" x="316" y="187" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#7c3aed" text-anchor="start" letter-spacing="0.7">AGENT · CALLS A MODEL</text>
-<text xml:space="preserve" x="311" y="214" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">orchestrator</text>
-<text xml:space="preserve" x="311" y="236" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">chooses service and window</text>
-<text xml:space="preserve" x="311" y="254" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">over three typed tools:</text>
-<text xml:space="preserve" x="311" y="272" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="400" fill="#0f172a" text-anchor="start">resolve_blast_radius</text>
-<text xml:space="preserve" x="311" y="290" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="400" fill="#0f172a" text-anchor="start">compute_window  1–24 h</text>
-<text xml:space="preserve" x="311" y="308" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="400" fill="#0f172a" text-anchor="start">dispatch_collectors</text>
-<text xml:space="preserve" x="311" y="326" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">4-turn cap · service is an enum</text>
-<path d="M245,247 H293" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<path d="M295,397 V508 A115.0,12 0 0 0 525,508 V397" fill="#ffffff" stroke="#0f766e" stroke-width="1.8"/>
-<ellipse cx="410.0" cy="397" rx="115.0" ry="12" fill="#f0fdfa" stroke="#0f766e" stroke-width="1.8"/>
-<rect x="309" y="417" width="47" height="18" rx="9" fill="#0f766e" fill-opacity="0.12"/>
-<text xml:space="preserve" x="316" y="430" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#0f766e" text-anchor="start" letter-spacing="0.7">STORE</text>
-<text xml:space="preserve" x="311" y="457" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">Service manifest</text>
-<text xml:space="preserve" x="311" y="479" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="400" fill="#0f172a" text-anchor="start">service_manifest.yaml</text>
-<text xml:space="preserve" x="311" y="497" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">radius = service + one hop</text>
-<path d="M410,385 V352" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<rect x="555" y="150" width="280" height="382" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="1.6" stroke-dasharray="6 5"/>
-<rect x="570" y="162" width="126" height="18" rx="9" fill="#64748b" fill-opacity="0.12"/>
-<text xml:space="preserve" x="577" y="175" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#64748b" text-anchor="start" letter-spacing="0.7">PYTHON · NO MODEL</text>
-<text xml:space="preserve" x="570" y="197" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#0f172a" text-anchor="start">4 collector FunctionNodes,</text>
-<text xml:space="preserve" x="570" y="213" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#0f172a" text-anchor="start">one concurrent batch</text>
-<rect x="570" y="228" width="250" height="70" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.6"/>
-<text xml:space="preserve" x="584" y="250" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="start">CloudTrail</text>
-<text xml:space="preserve" x="584" y="269" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">lookup_events · mutating calls only</text>
-<text xml:space="preserve" x="584" y="286" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">15-min delivery lag reported</text>
-<rect x="570" y="304" width="250" height="70" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.6"/>
-<text xml:space="preserve" x="584" y="326" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="start">Kubernetes audit log</text>
-<text xml:space="preserve" x="584" y="345" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">RequestResponse: real before/after</text>
-<text xml:space="preserve" x="584" y="362" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">attributes impersonated approvers</text>
-<rect x="570" y="380" width="250" height="70" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.6"/>
-<text xml:space="preserve" x="584" y="402" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="start">Helm history</text>
-<text xml:space="preserve" x="584" y="421" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">every revision; N−1 is the</text>
-<text xml:space="preserve" x="584" y="438" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">rollback target and its inverse</text>
-<rect x="570" y="456" width="250" height="70" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.6"/>
-<text xml:space="preserve" x="584" y="478" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="start">GitHub</text>
-<text xml:space="preserve" x="584" y="497" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">merges + direct pushes to main</text>
-<text xml:space="preserve" x="584" y="514" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">→ “Nothing shipped through CI”</text>
-<path d="M525,255 H553" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<path d="M865,172 V338 A122.5,12 0 0 0 1110,338 V172" fill="#ffffff" stroke="#0f766e" stroke-width="1.8"/>
-<ellipse cx="987.5" cy="172" rx="122.5" ry="12" fill="#f0fdfa" stroke="#0f766e" stroke-width="1.8"/>
-<rect x="879" y="192" width="47" height="18" rx="9" fill="#0f766e" fill-opacity="0.12"/>
-<text xml:space="preserve" x="886" y="205" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#0f766e" text-anchor="start" letter-spacing="0.7">STORE</text>
-<text xml:space="preserve" x="881" y="232" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">Change ledger</text>
-<text xml:space="preserve" x="881" y="254" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">one ChangeEvent shape · UTC</text>
-<text xml:space="preserve" x="881" y="272" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">one identity per human</text>
-<text xml:space="preserve" x="881" y="290" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">blast-radius index; no</text>
-<text xml:space="preserve" x="881" y="308" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">unscoped query exists</text>
-<text xml:space="preserve" x="881" y="328" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#0f766e" text-anchor="start">HMAC-chained, tamper-evident</text>
-<path d="M835,245 H863" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<rect x="865" y="378" width="245" height="152" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.6"/>
-<rect x="879" y="392" width="126" height="18" rx="9" fill="#64748b" fill-opacity="0.12"/>
-<text xml:space="preserve" x="886" y="405" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#64748b" text-anchor="start" letter-spacing="0.7">PYTHON · NO MODEL</text>
-<text xml:space="preserve" x="881" y="432" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">Correlation scoring</text>
-<text xml:space="preserve" x="881" y="454" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="400" fill="#0f172a" text-anchor="start">radius_overlap      0.40</text>
-<text xml:space="preserve" x="881" y="471" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="400" fill="#0f172a" text-anchor="start">temporal_proximity  0.35</text>
-<text xml:space="preserve" x="881" y="488" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="400" fill="#0f172a" text-anchor="start">type_prior          0.25</text>
-<text xml:space="preserve" x="881" y="505" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="400" fill="#0f172a" text-anchor="start">recurrence          0.00</text>
-<text xml:space="preserve" x="881" y="522" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">+ rank stability on the brief</text>
-<path d="M987,350 V376" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<rect x="1140" y="160" width="400" height="150" rx="12" fill="#ffffff" stroke="#7c3aed" stroke-width="2.2"/>
-<rect x="1154" y="174" width="153" height="18" rx="9" fill="#7c3aed" fill-opacity="0.12"/>
-<text xml:space="preserve" x="1161" y="187" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#7c3aed" text-anchor="start" letter-spacing="0.7">AGENT · CALLS A MODEL</text>
-<text xml:space="preserve" x="1156" y="214" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">correlator</text>
-<text xml:space="preserve" x="1156" y="236" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">writes the narrative over the ranked candidates;</text>
-<text xml:space="preserve" x="1156" y="254" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">every claim must cite an event id it was given.</text>
-<text xml:space="preserve" x="1156" y="272" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">Uncited claims are dropped; a narrative naming</text>
-<text xml:space="preserve" x="1156" y="290" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">any cause but rank 1 is rejected whole.</text>
-<path d="M1110,455 H1124 V235 H1138" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<rect x="1365" y="340" width="175" height="190" rx="12" fill="#ffffff" stroke="#0f172a" stroke-width="2.2"/>
-<rect x="1379" y="354" width="100" height="18" rx="9" fill="#0f172a" fill-opacity="0.12"/>
-<text xml:space="preserve" x="1386" y="367" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#0f172a" text-anchor="start" letter-spacing="0.7">SEAM CONTRACT</text>
-<text xml:space="preserve" x="1381" y="394" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">Brief</text>
-<text xml:space="preserve" x="1381" y="416.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.3" font-weight="400" fill="#0f172a" text-anchor="start">incident_id · alert</text>
-<text xml:space="preserve" x="1381" y="431.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.3" font-weight="400" fill="#0f172a" text-anchor="start">radius · window</text>
-<text xml:space="preserve" x="1381" y="447.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.3" font-weight="400" fill="#0f172a" text-anchor="start">candidates</text>
-<text xml:space="preserve" x="1381" y="462.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.3" font-weight="400" fill="#0f172a" text-anchor="start">ci_status</text>
-<text xml:space="preserve" x="1381" y="478.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.3" font-weight="400" fill="#0f172a" text-anchor="start">narrative</text>
-<text xml:space="preserve" x="1381" y="493.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.3" font-weight="400" fill="#0f172a" text-anchor="start">stability</text>
-<text xml:space="preserve" x="1381" y="509.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.3" font-weight="400" fill="#0f172a" text-anchor="start">coverage_gaps</text>
-<path d="M1452,310 V338" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<rect x="1140" y="340" width="200" height="90" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.6"/>
-<text xml:space="preserve" x="1154" y="364" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="start">Coverage follow-up</text>
-<text xml:space="preserve" x="1154" y="383" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">CloudTrail re-polled every 20 s</text>
-<text xml:space="preserve" x="1154" y="399" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">until its lag passes; a late</text>
-<text xml:space="preserve" x="1154" y="415" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">change re-ranks in place</text>
-<rect x="1140" y="440" width="200" height="90" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.6"/>
-<text xml:space="preserve" x="1154" y="464" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="start">Slack change brief</text>
-<text xml:space="preserve" x="1154" y="483" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">Block Kit · top 3 with diffs</text>
-<text xml:space="preserve" x="1154" y="499" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">CI line · ranking stability</text>
-<text xml:space="preserve" x="1154" y="515" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.8" font-weight="400" fill="#475569" text-anchor="start">posted before anyone asks</text>
-<path d="M1365,485 H1342" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<path d="M1240,430 V438" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<line x1="40" y1="572" x2="1560" y2="572" stroke="#dc2626" stroke-width="2" stroke-dasharray="9 6"/>
-<rect x="501.5" y="560" width="597.0" height="24" rx="12" fill="#fff" stroke="#dc2626" stroke-width="1.4"/>
-<text xml:space="preserve" x="800" y="576.5" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="800" fill="#dc2626" text-anchor="middle" letter-spacing="0.6">THE SEAM · investigation imports nothing from automation · only the Brief crosses</text>
-<rect x="40" y="595" width="1520" height="270" rx="18" fill="#fff8ef" stroke="#f5d3a8" stroke-width="1.4"/>
-<text xml:space="preserve" x="60" y="622" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="800" fill="#c2410c" text-anchor="start" letter-spacing="1.1">AUTOMATION · TIER 1 + TIER 2 · EVERY MUTATION WAITS FOR A HUMAN</text>
-<text xml:space="preserve" x="1430" y="622" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="500" fill="#c2410c" text-anchor="end">reads right to left  ←</text>
-<rect x="1290" y="640" width="245" height="175" rx="12" fill="#ffffff" stroke="#7c3aed" stroke-width="2.2"/>
-<rect x="1304" y="654" width="153" height="18" rx="9" fill="#7c3aed" fill-opacity="0.12"/>
-<text xml:space="preserve" x="1311" y="667" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#7c3aed" text-anchor="start" letter-spacing="0.7">AGENT · CALLS A MODEL</text>
-<text xml:space="preserve" x="1306" y="694" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">proposer</text>
-<text xml:space="preserve" x="1306" y="716" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">selects an action_id from the</text>
-<text xml:space="preserve" x="1306" y="734" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">catalog, with typed params —</text>
-<text xml:space="preserve" x="1306" y="752" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">or declines with "none".</text>
-<text xml:space="preserve" x="1306" y="770" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">It never writes a command.</text>
-<rect x="990" y="640" width="270" height="175" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.6"/>
-<rect x="1004" y="654" width="126" height="18" rx="9" fill="#64748b" fill-opacity="0.12"/>
-<text xml:space="preserve" x="1011" y="667" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#64748b" text-anchor="start" letter-spacing="0.7">PYTHON · NO MODEL</text>
-<text xml:space="preserve" x="1006" y="694" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">Typed action catalog</text>
-<text xml:space="preserve" x="1006" y="716" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="400" fill="#0f172a" text-anchor="start">revert_configmap_key   T1</text>
-<text xml:space="preserve" x="1006" y="733" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="400" fill="#0f172a" text-anchor="start">helm_rollback          T1</text>
-<text xml:space="preserve" x="1006" y="750" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" font-weight="400" fill="#0f172a" text-anchor="start">restore_db_parameter   T2</text>
-<text xml:space="preserve" x="1006" y="767" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">preconditions fail closed</text>
-<text xml:space="preserve" x="1006" y="784" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">thresholds promote, never demote</text>
-<rect x="715" y="640" width="245" height="175" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.6"/>
-<rect x="729" y="654" width="126" height="18" rx="9" fill="#64748b" fill-opacity="0.12"/>
-<text xml:space="preserve" x="736" y="667" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#64748b" text-anchor="start" letter-spacing="0.7">PYTHON · NO MODEL</text>
-<text xml:space="preserve" x="731" y="694" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">Dry run + inverse</text>
-<text xml:space="preserve" x="731" y="716" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">literal before/after, zero writes</text>
-<text xml:space="preserve" x="731" y="733" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">inverse computed first; none</text>
-<text xml:space="preserve" x="731" y="750" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">means the action refuses</text>
-<text xml:space="preserve" x="731" y="767" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">card bound to the dry run's</text>
-<text xml:space="preserve" x="731" y="784" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">digest; stale clicks refused</text>
-<rect x="425" y="640" width="260" height="175" rx="12" fill="#ffffff" stroke="#15803d" stroke-width="1.6"/>
-<rect x="439" y="654" width="106" height="18" rx="9" fill="#15803d" fill-opacity="0.12"/>
-<text xml:space="preserve" x="446" y="667" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#15803d" text-anchor="start" letter-spacing="0.7">HUMAN DECISION</text>
-<text xml:space="preserve" x="441" y="694" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">Slack approval card</text>
-<text xml:space="preserve" x="441" y="716" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">diff · inverse · tier · reason</text>
-<text xml:space="preserve" x="441" y="733" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">Tier 1 → on-call engineer</text>
-<text xml:space="preserve" x="441" y="750" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">Tier 2 → manager only</text>
-<text xml:space="preserve" x="441" y="767" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">idempotent per (incident, action)</text>
-<text xml:space="preserve" x="441" y="784" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">expires after 30 minutes</text>
-<rect x="65" y="640" width="330" height="175" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.6"/>
-<rect x="79" y="654" width="126" height="18" rx="9" fill="#64748b" fill-opacity="0.12"/>
-<text xml:space="preserve" x="86" y="667" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#64748b" text-anchor="start" letter-spacing="0.7">PYTHON · NO MODEL</text>
-<text xml:space="preserve" x="81" y="694" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">Executor</text>
-<text xml:space="preserve" x="81" y="716" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">actor credential minted only by the</text>
-<text xml:space="preserve" x="81" y="733" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">approval handler · one namespace · ≤ 900 s</text>
-<text xml:space="preserve" x="81" y="750" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">Kubernetes: impersonates the approver</text>
-<text xml:space="preserve" x="81" y="767" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">AWS: STS SourceIdentity = the approver</text>
-<text xml:space="preserve" x="81" y="784" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">→ ConfigMap · Helm release · RDS parameter</text>
-<path d="M1290,727 H1262" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<path d="M990,727 H962" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<path d="M715,727 H687" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<path d="M425,727 H397" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<text xml:space="preserve" x="65" y="845" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#0f172a" text-anchor="start">Written down:</text>
-<text xml:space="preserve" x="160" y="845" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">a signed decision log, refusals included</text>
-<text xml:space="preserve" x="580" y="845" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">the incident record, in the brief's thread · each stage to DynamoDB</text>
-<text xml:space="preserve" x="1150" y="845" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">/fazerops status | brief | changes — read-only</text>
-<path d="M1452,530 V638" fill="none" stroke="#dc2626" stroke-width="1.8" marker-end="url(#arrr)"/>
-<text xml:space="preserve" x="1464" y="563" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="700" fill="#dc2626" text-anchor="start">Brief → Proposal</text>
-<rect x="40" y="905" width="1520" height="185" rx="18" fill="#f7f5ff" stroke="#dcd3fb" stroke-width="1.4"/>
-<text xml:space="preserve" x="60" y="932" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="800" fill="#6d28d9" text-anchor="start" letter-spacing="1.1">CATALOG GROWTH · FROM PRODUCTION EVIDENCE</text>
-<text xml:space="preserve" x="1360" y="932" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="500" fill="#6d28d9" text-anchor="end">the one place a model's code can run</text>
-<rect x="65" y="950" width="260" height="122" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.6"/>
-<rect x="79" y="964" width="126" height="18" rx="9" fill="#64748b" fill-opacity="0.12"/>
-<text xml:space="preserve" x="86" y="977" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#64748b" text-anchor="start" letter-spacing="0.7">PYTHON · NO MODEL</text>
-<text xml:space="preserve" x="81" y="1004" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">Gap signals</text>
-<text xml:space="preserve" x="81" y="1026" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">declines · rejections · no inverse</text>
-<text xml:space="preserve" x="81" y="1043" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">· the fix a human made by hand</text>
-<text xml:space="preserve" x="81" y="1060" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">typed fields only, no free text</text>
-<rect x="350" y="950" width="210" height="122" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.6"/>
-<rect x="364" y="964" width="126" height="18" rx="9" fill="#64748b" fill-opacity="0.12"/>
-<text xml:space="preserve" x="371" y="977" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#64748b" text-anchor="start" letter-spacing="0.7">PYTHON · NO MODEL</text>
-<text xml:space="preserve" x="366" y="1004" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">Miner</text>
-<text xml:space="preserve" x="366" y="1026" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">eligible at ≥ 2 incidents</text>
-<text xml:space="preserve" x="366" y="1043" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">and ≥ 2 distinct actors</text>
-<rect x="585" y="950" width="295" height="122" rx="12" fill="#ffffff" stroke="#7c3aed" stroke-width="2.2"/>
-<rect x="599" y="964" width="205" height="18" rx="9" fill="#7c3aed" fill-opacity="0.12"/>
-<text xml:space="preserve" x="606" y="977" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#7c3aed" text-anchor="start" letter-spacing="0.7">PYTHON · RUNG 3 CALLS A MODEL</text>
-<text xml:space="preserve" x="601" y="1004" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">Three rungs, cheapest first</text>
-<text xml:space="preserve" x="601" y="1026" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">1 widen an action's parameters</text>
-<text xml:space="preserve" x="601" y="1043" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">2 declarative entry, human writer</text>
-<text xml:space="preserve" x="601" y="1060" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">3 a writer a model authors</text>
-<rect x="905" y="950" width="310" height="122" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.6"/>
-<rect x="919" y="964" width="126" height="18" rx="9" fill="#64748b" fill-opacity="0.12"/>
-<text xml:space="preserve" x="926" y="977" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#64748b" text-anchor="start" letter-spacing="0.7">PYTHON · NO MODEL</text>
-<text xml:space="preserve" x="921" y="1004" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">Proven before anyone is asked</text>
-<text xml:space="preserve" x="921" y="1026" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">replayed against every human fix</text>
-<text xml:space="preserve" x="921" y="1043" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">run in a throwaway k3d namespace,</text>
-<text xml:space="preserve" x="921" y="1060" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">audit log watched for any escape</text>
-<rect x="1240" y="950" width="295" height="122" rx="12" fill="#ffffff" stroke="#15803d" stroke-width="1.6"/>
-<rect x="1254" y="964" width="106" height="18" rx="9" fill="#15803d" fill-opacity="0.12"/>
-<text xml:space="preserve" x="1261" y="977" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#15803d" text-anchor="start" letter-spacing="0.7">HUMAN DECISION</text>
-<text xml:space="preserve" x="1256" y="1004" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">Signed PR, or a one-shot</text>
-<text xml:space="preserve" x="1256" y="1026" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">CI checks the ledger's HMAC and</text>
-<text xml:space="preserve" x="1256" y="1043" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">refuses tier or permission edits;</text>
-<text xml:space="preserve" x="1256" y="1060" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">one-shot: runs once, manager only</text>
-<path d="M325,1011 H348" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<path d="M560,1011 H583" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<path d="M880,1011 H903" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<path d="M1215,1011 H1238" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
-<path d="M1387,950 V884 H1125 V817" fill="none" stroke="#7c3aed" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#arrp)"/>
-<path d="M1125,884 H555 V817" fill="none" stroke="#7c3aed" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#arrp)"/>
-<text xml:space="preserve" x="1135" y="900" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600" fill="#7c3aed" text-anchor="start">PR merged by a human → provisional action</text>
-<text xml:space="preserve" x="565" y="900" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600" fill="#7c3aed" text-anchor="start">one-shot → the manager's card</text>
-<rect x="40" y="1108" width="1520" height="62" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.6"/>
-<rect x="56" y="1118" width="67" height="18" rx="9" fill="#0f172a" fill-opacity="0.12"/>
-<text xml:space="preserve" x="63" y="1131" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" fill="#0f172a" text-anchor="start" letter-spacing="0.7">DEPLOYED</text>
-<text xml:space="preserve" x="150" y="1131" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.8" font-weight="400" fill="#0f172a" text-anchor="start">Amazon Bedrock AgentCore Runtime runs the Tier 0 graph without the proposer · AgentCore Identity holds the model key · incident sessions in DynamoDB</text>
-<text xml:space="preserve" x="150" y="1153" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.8" font-weight="400" fill="#475569" text-anchor="start">Strands Agents throughout · models: Gemini on Vertex AI — Bedrock is wired and one line away, inference is blocked on the build account · Slack Bolt, Socket Mode</text>
+<!-- Palette, five colours: ink #0f172a · white #ffffff · grey #e2e8f0 · agent #4f6d8a · seam #dc2626 -->
+<style>
+text { font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #0f172a; }
+.h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.3px; }
+.sub { font-size: 17px; }
+.leg { font-size: 15px; font-weight: 600; }
+.band { font-size: 15px; font-weight: 800; letter-spacing: 1.1px; }
+.note { font-size: 14px; font-weight: 500; }
+.t { font-size: 20px; font-weight: 800; text-anchor: middle; }
+.t2 { font-size: 19px; font-weight: 800; text-anchor: middle; }
+.ts { font-size: 17px; font-weight: 800; text-anchor: middle; }
+.tg { font-size: 16px; font-weight: 800; text-anchor: middle; }
+.lbl { font-size: 13.5px; font-weight: 700; }
+.pill { font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-anchor: middle; }
+.w { fill: #ffffff; }
+.py { fill: #ffffff; stroke: #0f172a; stroke-width: 2.5; }
+.agent { fill: #4f6d8a; stroke: #0f172a; stroke-width: 2.5; }
+.human { fill: #0f172a; stroke: #0f172a; stroke-width: 2.5; }
+.store { fill: #e2e8f0; stroke: #0f172a; stroke-width: 2.5; }
+.bandbox { fill: #ffffff; stroke: #0f172a; stroke-width: 2; }
+.a { fill: none; stroke: #0f172a; stroke-width: 2.4; marker-end: url(#arr); }
+.ad { fill: none; stroke: #0f172a; stroke-width: 2.4; stroke-dasharray: 7 5; marker-end: url(#arr); }
+</style>
+<defs>
+<marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f172a"/></marker>
+<marker id="arrr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker>
+</defs>
+<rect width="1600" height="1110" fill="#ffffff"/>
+
+<!-- Header and legend -->
+<text class="h1" x="40" y="58">FazerOps architecture</text>
+<text class="sub" x="40" y="90">Tier 0 investigates on its own and changes nothing. Every mutation waits for a human approval.</text>
+<rect x="642" y="42" width="26" height="16" fill="#4f6d8a" stroke="#0f172a" stroke-width="2"/>
+<text class="leg" x="676" y="55">Agent · calls a model</text>
+<rect x="889" y="42" width="26" height="16" fill="#ffffff" stroke="#0f172a" stroke-width="2"/>
+<text class="leg" x="923" y="55">Python · deterministic</text>
+<rect x="1145" y="42" width="26" height="16" fill="#0f172a" stroke="#0f172a" stroke-width="2"/>
+<text class="leg" x="1179" y="55">Human decision</text>
+<rect x="1331" y="42" width="26" height="16" fill="#e2e8f0" stroke="#0f172a" stroke-width="2"/>
+<text class="leg" x="1365" y="55">Store</text>
+<line x1="1439" y1="50" x2="1465" y2="50" stroke="#dc2626" stroke-width="3" stroke-dasharray="5 4"/>
+<text class="leg" x="1473" y="55">Layer seam</text>
+
+<!-- Investigation -->
+<rect class="bandbox" x="270" y="110" width="1290" height="370"/>
+<text class="band" x="290" y="140">INVESTIGATION · TIER 0 · READ-ONLY</text>
+<text class="note" x="1540" y="140" text-anchor="end">one Strands Graph</text>
+
+<rect class="py" x="40" y="170" width="205" height="100"/>
+<text class="t" x="142.5" y="227">Alert webhook</text>
+
+<rect x="40" y="320" width="205" height="100" fill="#ffffff" stroke="#0f172a" stroke-width="2.5" stroke-dasharray="8 5"/>
+<text class="t2" x="142.5" y="364">Untrusted-data</text>
+<text class="t2" x="142.5" y="388">envelope</text>
+<path class="a" d="M142.5,270 V318"/>
+
+<rect class="agent" x="295" y="170" width="230" height="100"/>
+<text class="t w" x="410" y="227">orchestrator</text>
+<path class="a" d="M245,370 H258 V220 H293"/>
+
+<rect class="store" x="295" y="323" width="230" height="117"/>
+<text class="t" x="410" y="388">Service manifest</text>
+<path class="a" d="M410,323 V272"/>
+
+<rect x="555" y="160" width="280" height="305" fill="#ffffff" stroke="#0f172a" stroke-width="2.5" stroke-dasharray="8 5"/>
+<text class="tg" x="695" y="190">4 collectors · one batch</text>
+<rect class="py" x="570" y="206" width="245" height="52"/>
+<text class="ts" x="692.5" y="238">CloudTrail</text>
+<rect class="py" x="570" y="270" width="245" height="52"/>
+<text class="ts" x="692.5" y="302">Kubernetes audit log</text>
+<rect class="py" x="570" y="334" width="245" height="52"/>
+<text class="ts" x="692.5" y="366">Helm history</text>
+<rect class="py" x="570" y="398" width="245" height="52"/>
+<text class="ts" x="692.5" y="430">GitHub</text>
+<path class="a" d="M525,220 H553"/>
+
+<rect class="store" x="865" y="160" width="245" height="142"/>
+<text class="t" x="987.5" y="238">Change ledger</text>
+<path class="a" d="M835,238 H863"/>
+
+<rect class="py" x="865" y="340" width="245" height="100"/>
+<text class="t" x="987.5" y="397">Correlation scoring</text>
+<path class="a" d="M987.5,302 V338"/>
+
+<rect class="agent" x="1140" y="170" width="400" height="80"/>
+<text class="t w" x="1340" y="217">correlator</text>
+<path class="a" d="M1110,390 H1124 V210 H1138"/>
+
+<rect x="1365" y="290" width="175" height="160" fill="#ffffff" stroke="#dc2626" stroke-width="4"/>
+<rect x="1380.5" y="328" width="144" height="20" fill="#dc2626"/>
+<text class="pill w" x="1452.5" y="342">SEAM CONTRACT</text>
+<text class="t" x="1452.5" y="398" style="font-size:26px">Brief</text>
+<path class="a" d="M1452.5,250 V288"/>
+
+<rect class="py" x="1140" y="290" width="200" height="65"/>
+<text class="ts" x="1240" y="328" style="font-size:15.5px">Coverage follow-up</text>
+<rect class="py" x="1140" y="385" width="200" height="65"/>
+<text class="ts" x="1240" y="423" style="font-size:15.5px">Slack change brief</text>
+<path class="a" d="M1240,355 V383"/>
+<path class="a" d="M1365,417 H1342"/>
+
+<!-- The seam -->
+<line x1="40" y1="505" x2="1560" y2="505" stroke="#dc2626" stroke-width="3" stroke-dasharray="10 6"/>
+<rect x="620" y="492" width="360" height="26" fill="#dc2626"/>
+<text class="w" x="800" y="510" text-anchor="middle" style="font-size:13.5px;font-weight:800;letter-spacing:0.6px">THE SEAM · ONLY THE BRIEF CROSSES</text>
+
+<!-- Automation -->
+<rect class="bandbox" x="40" y="530" width="1520" height="250"/>
+<text class="band" x="60" y="560">AUTOMATION · TIER 1 + TIER 2 · EVERY MUTATION WAITS FOR A HUMAN</text>
+<text class="note" x="1420" y="560" text-anchor="end">reads right to left  ←</text>
+<path d="M1452.5,450 V573" fill="none" stroke="#dc2626" stroke-width="3" marker-end="url(#arrr)"/>
+
+<rect class="agent" x="1290" y="575" width="245" height="100"/>
+<text class="t w" x="1412.5" y="632">proposer</text>
+<rect class="py" x="990" y="575" width="270" height="100"/>
+<text class="t" x="1125" y="632">Typed action catalog</text>
+<rect class="py" x="715" y="575" width="245" height="100"/>
+<text class="t" x="837.5" y="632">Dry run + inverse</text>
+<rect class="human" x="425" y="575" width="260" height="100"/>
+<text class="t w" x="555" y="632">Slack approval card</text>
+<rect class="py" x="65" y="575" width="330" height="100"/>
+<text class="t" x="230" y="632">Scoped executor</text>
+<path class="a" d="M1290,625 H1262"/>
+<path class="a" d="M990,625 H962"/>
+<path class="a" d="M715,625 H687"/>
+<path class="a" d="M425,625 H397"/>
+
+<rect class="store" x="65" y="702" width="160" height="50"/>
+<text class="ts" x="145" y="733" style="font-size:16px">Incident record</text>
+<rect class="store" x="240" y="702" width="155" height="50"/>
+<text class="ts" x="317.5" y="733" style="font-size:16px">Decision log</text>
+<path class="a" d="M145,675 V700"/>
+<path class="a" d="M470,675 V727 H397"/>
+
+<!-- Catalog growth -->
+<rect class="bandbox" x="40" y="830" width="1520" height="180"/>
+<path class="ad" d="M145,780 V878"/>
+<text class="lbl" x="157" y="818">declines · rejections · hand fixes</text>
+<text class="band" x="170" y="860">CATALOG GROWTH · FROM PRODUCTION EVIDENCE</text>
+<text class="note" x="1360" y="860" text-anchor="end">the one place a model's code can run</text>
+
+<rect class="py" x="65" y="880" width="260" height="100"/>
+<text class="t" x="195" y="937">Gap signals</text>
+<rect class="py" x="350" y="880" width="210" height="100"/>
+<text class="t" x="455" y="937">Miner</text>
+<rect class="agent" x="585" y="880" width="295" height="100"/>
+<text class="t2 w" x="732.5" y="925">Three rungs,</text>
+<text class="t2 w" x="732.5" y="949">cheapest first</text>
+<rect class="py" x="905" y="880" width="310" height="100"/>
+<text class="t2" x="1060" y="925">Proven in a sandbox</text>
+<text class="t2" x="1060" y="949">before anyone is asked</text>
+<rect class="human" x="1240" y="880" width="295" height="100"/>
+<text class="t2 w" x="1387.5" y="925">Signed PR,</text>
+<text class="t2 w" x="1387.5" y="949">or a one-shot</text>
+<path class="a" d="M325,930 H348"/>
+<path class="a" d="M560,930 H583"/>
+<path class="a" d="M880,930 H903"/>
+<path class="a" d="M1215,930 H1238"/>
+
+<path class="ad" d="M1387.5,880 V798 H1125 V677"/>
+<path class="ad" d="M1125,798 H555 V677"/>
+<text class="lbl" x="1137" y="818">PR merged → provisional action</text>
+<text class="lbl" x="567" y="818">one-shot → the manager's card</text>
+
+<!-- Deployment -->
+<rect x="40" y="1030" width="1520" height="56" fill="#e2e8f0" stroke="#0f172a" stroke-width="2"/>
+<rect x="58" y="1048" width="84" height="20" fill="#0f172a"/>
+<text class="pill w" x="100" y="1062">DEPLOYED</text>
+<text x="162" y="1064" style="font-size:15px;font-weight:600">AgentCore Runtime runs Tier 0  ·  AgentCore Identity  ·  DynamoDB  ·  Strands Agents  ·  Gemini on Vertex AI  ·  Slack Bolt</text>
 </svg>

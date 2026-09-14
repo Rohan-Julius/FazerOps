@@ -1,9 +1,9 @@
 <div align="center">
-<img width="820" alt="FazerOps — the change ledger for everything that didn't go through CI" src="./assets/fazerops.png" />
+<img width="820" alt="FazerOps — the agentic ledger for everything that missed the CI" src="./assets/fazerops.png" />
 
 <br><br>
 
-### **The change ledger for everything that didn't go through CI — and an agent that reads it when the page fires**
+### **Agentic investigation of what changed — even what CI never saw.**
 
 <br>
 
