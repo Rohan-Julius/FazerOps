@@ -1,0 +1,30 @@
+{
+  "candidate_id": "gap-85bc2bdffc08",
+  "action_id": "revert_configmap_binaryData",
+  "cited": [
+    {
+      "id": "05862838-6e37-48e0-b025-53cbe0bfedc6",
+      "digest": "6efdeb5e9f092eccf762c685726f6d87577983ffc09af01e9a707647a6ca7865"
+    },
+    {
+      "id": "39774502-30cd-4ab5-a9b3-37159b16ccdf",
+      "digest": "7eb587f75a804002b474386b48719f033b1c5ade8e57282f2dab0bda50486e2c"
+    },
+    {
+      "id": "4ada9a10-68c5-4c04-a65c-fa67eb95c36e",
+      "digest": "897956b3511610d31f553d392b59fef15ce781391be364b22d32d2b4b903912e"
+    },
+    {
+      "id": "56575d79-f464-4cc7-b19c-40a0b37e1f80",
+      "digest": "4ad5f891787d51ab18abf06d411130fa068e049964bb10688b58f8757f8a981e"
+    }
+  ],
+  "containment": {
+    "required": true,
+    "verdict": "contained",
+    "recipe_class": "observed",
+    "runs": 2
+  },
+  "module_digest": "c2a46450d14273e44881ecd7c5f715896421cc47693d4b4096631c41ef554088",
+  "mac": "f055e27706c9b6dff17891eb0c9af70af869db8368e637c63a6eac026af4891d"
+}
