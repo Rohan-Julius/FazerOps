@@ -183,3 +183,27 @@ def test_the_weight_stays_zero_so_the_demo_ranking_cannot_move():
     """Plan §3.3: the feature is built, the weight declines to use it. Both facts are meant
     to be visible in `weights.yaml`, and this is what keeps the second one true."""
     assert float(load_weights()["weights"]["recurrence"]) == 0.0
+
+
+def test_a_later_firing_of_the_same_rule_is_a_precedent():
+    """Fixed 14 Sep: alerts were keyed on `alert.id`, the rule's own stable identifier, so the second
+    firing of a rule overwrote the first and a re-fire never counted as history."""
+    ledger = LedgerStore()
+    past = ALERT_TIME - timedelta(days=7)
+    ledger.record_alert(alert("fingerprint-1", at=past))
+    ledger.extend([event("e-week-ago", at=past - timedelta(minutes=25))])
+
+    now = alert("fingerprint-1")
+    ledger.record_alert(now)
+
+    assert [prior.fired_at for prior in ledger.prior_alerts(now)] == [past]
+    assert recurrence(CURRENT, now, BILLING, ledger) > 0.0
+
+
+def test_a_redelivered_firing_is_recorded_once(tmp_path):
+    ledger = LedgerStore(tmp_path / "ledger.jsonl", key=None)
+    ledger.record_alert(alert("fingerprint-1"))
+    ledger.record_alert(alert("fingerprint-1"))
+
+    assert len(LedgerStore(tmp_path / "ledger.jsonl", key=None)._alerts) == 1
+

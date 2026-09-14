@@ -115,7 +115,11 @@ class LedgerStore:
         return len(self._events) - before
 
     def record_alert(self, alert: Alert) -> None:
-        """Remember that an alert fired. Idempotent on `alert.id`.
+        """Remember that an alert fired. Idempotent on one *firing* — `alert.id` and `fired_at`.
+
+        Keyed on `alert.id` alone until 14 Sep: the id is the rule's own identifier (a fingerprint,
+        an alarm name), so every later firing of a rule overwrote the first and `prior_alerts` never
+        counted a re-fire of the same rule — the one case `recurrence` most exists for.
 
         This is the whole memory W14b's `recurrence` needs: the ledger already holds every
         change, so the only fact missing from a "has this shape preceded this signature
@@ -123,8 +127,9 @@ class LedgerStore:
         rankings they contained, would make the feature depend on what a past scorer
         concluded — and a scoring change would then rewrite history.
         """
-        first_time = alert.id not in self._alerts
-        self._alerts[alert.id] = alert
+        key = _alert_key(alert)
+        first_time = key not in self._alerts
+        self._alerts[key] = alert
 
         if self._alerts_path is not None and first_time:
             ChainedLog(self._alerts_path, self._key).append([alert.model_dump(mode="json")])
@@ -148,7 +153,7 @@ class LedgerStore:
         found = [
             past
             for past in self._alerts.values()
-            if past.id != alert.id
+            if _alert_key(past) != _alert_key(alert)
             and past.service == alert.service
             and past.alert_class is alert.alert_class
             and past.fired_at < alert.fired_at
@@ -234,7 +239,7 @@ class LedgerStore:
                 alert = Alert.model_validate(record)
             except ValueError:
                 continue
-            self._alerts[alert.id] = alert
+            self._alerts[_alert_key(alert)] = alert
         return state[0], state[1]
 
     def _deindex(self, event_id: str) -> None:
@@ -247,3 +252,9 @@ class LedgerStore:
                 holders.discard(event_id)
                 if not holders:
                     del self._by_key[key]
+
+
+def _alert_key(alert: Alert) -> str:
+    """One firing of one rule. The same key a re-delivered webhook produces, so recording it twice is
+    still a no-op."""
+    return f"{alert.id}@{alert.fired_at.isoformat()}"
