@@ -51,6 +51,7 @@ markers = [
     "cluster: requires a running k3d cluster (excluded from the CI default suite)",
     "github: requires network access to api.github.com and FAZEROPS_GITHUB_TEST_REPO (excluded from the CI default suite). Read-only and free.",
     "aws: requires live AWS credentials (excluded from the CI default suite). Read-only and free \u2014 lookup_events on management events is not metered, and nothing under this marker may create a resource.",
+    "agentcore: invokes the deployed AgentCore Runtime (FAZEROPS_AGENTCORE_RUNTIME_ARN). NOT free \u2014 one live Gemini investigation per run \u2014 so it runs only when -m agentcore is selected explicitly.",
 ]
 
 [tool.ruff]
