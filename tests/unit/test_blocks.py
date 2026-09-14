@@ -137,7 +137,10 @@ async def test_the_brief_renders_three_ranked_candidates(demo_brief):
     for candidate in demo_brief.candidates:
         assert f"#{candidate.rank}" in rendered
         assert candidate.event.resource.name in rendered
-        assert candidate.event.id in rendered, "every candidate cites its evidence id"
+        # Scores and evidence ids belong to the incident record; on the brief they were numbers and ids
+        # an on-call engineer could not act on (user, 14 Sep).
+        assert candidate.event.id not in rendered
+    assert "score `" not in rendered and "in band" not in rendered
 
     # Rank 1 is the ConfigMap — the finding the whole demo turns on.
     assert "#1  ConfigMap billing-api-config" in rendered
@@ -154,27 +157,35 @@ async def test_the_brief_renders_a_collapsed_diff(demo_brief):
 async def test_the_brief_carries_an_explicit_ci_status_line(demo_brief):
     """W11a's punchline, and it is rendered from `merge_count` rather than hardcoded."""
     blocks = change_brief(demo_brief)
-    assert "Nothing shipped through CI in this window." in _texts(blocks)
+    assert "Nothing shipped through CI in the 4 hours before the alert." in _texts(blocks)
 
 
-async def test_the_brief_offers_approve_and_reject(demo_brief):
+async def test_the_brief_points_to_the_card_and_offers_no_approve_of_its_own(demo_brief):
+    """Plan §9.2 (14 Sep): the brief and the card each showed Approve for one decision, and in the live
+    channel an engineer could not tell whether they were one decision or two. Only the card decides."""
     blocks = change_brief(
         demo_brief,
         proposal_summary="Revert pool.max",
         action_id="revert_configmap_key",
         dry_run_digest="0123456789abcdef",
     )
-    buttons = _buttons(blocks)
 
-    assert {button["action_id"] for button in buttons} >= {"approve", "reject"}
-    for button in buttons:
-        if button["action_id"] in ("approve", "reject"):
-            value = json.loads(button["value"])
-            assert value == {
-                "dry_run": "0123456789abcdef",
-                "incident_id": demo_brief.incident_id,
-                "action_id": "revert_configmap_key",
-            }
+    assert not {"approve", "reject"} & {button["action_id"] for button in _buttons(blocks)}
+    assert "approval card below" in _texts(blocks)
+
+
+async def test_a_decided_brief_says_what_was_decided(demo_brief):
+    blocks = change_brief(
+        demo_brief,
+        proposal_summary="Revert pool.max",
+        action_id="revert_configmap_key",
+        dry_run_digest="0123456789abcdef",
+        decided_line="<@U1> approved this, and it ran once.",
+    )
+    rendered = _texts(blocks)
+
+    assert "<@U1> approved this" in rendered
+    assert "approval card below" not in rendered
 
 
 async def test_every_block_is_valid_block_kit_json(demo_brief):
@@ -346,7 +357,7 @@ def test_the_approval_card_states_the_action_the_diff_and_the_inverse():
     assert "Revert pool.max in ConfigMap billing-api-config" in rendered
     assert "billing/configmap/billing-api-config" in rendered
     assert "pool.max: 20 → 100" in rendered
-    assert "revert_configmap_key(" in rendered, "the inverse is stated explicitly"
+    assert "To undo it: set pool.max back to 20" in rendered, "the inverse is stated explicitly, in words"
     assert "Tier 1" in rendered
 
 
@@ -360,7 +371,7 @@ def test_a_tier_two_card_states_why_it_escalated():
     rendered = _texts(card)
 
     assert "Tier 2" in rendered
-    assert "manager approval required" in rendered
+    assert "a manager" in rendered
     assert "crosses a namespace boundary" in rendered
 
 
@@ -382,7 +393,7 @@ def test_an_action_with_no_inverse_shows_no_approve_button():
     assert dry.reversible is False
 
     card = approval_card(dry, incident_id="INC-1", tier=Tier.ENGINEER_APPROVAL)
-    assert "No inverse could be computed" in _texts(card)
+    assert "This cannot run" in _texts(card)
     assert _buttons(card) == []
 
 
@@ -395,5 +406,5 @@ def test_an_unmet_precondition_reaches_the_card_and_removes_the_button():
     assert dry.unmet_preconditions
 
     card = approval_card(dry, incident_id="INC-1", tier=Tier.ENGINEER_APPROVAL)
-    assert "precondition not met" in _texts(card)
+    assert "Cannot run:" in _texts(card)
     assert _buttons(card) == []

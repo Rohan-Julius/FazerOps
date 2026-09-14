@@ -93,8 +93,8 @@ def approval_card_note(brief: Brief) -> str | None:
     if still_open:
         gap = min(still_open, key=lambda g: g.unobserved.start)
         return (
-            f"{SOURCE_NAMES.get(gap.source, gap.source)} changes after {gap.unobserved.start:%H:%M} UTC "
-            f"may still arrive until {gap.settles_at:%H:%M} UTC. This card was drafted before they could be seen."
+            f"Changes recorded by {SOURCE_NAMES.get(gap.source, gap.source)} after {gap.unobserved.start:%H:%M} UTC "
+            f"may still arrive until {gap.settles_at:%H:%M} UTC. If one does, this card will say so."
         )
     return None
 

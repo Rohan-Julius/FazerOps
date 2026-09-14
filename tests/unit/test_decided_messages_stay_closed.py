@@ -65,11 +65,12 @@ async def _posted(automation):
     return response, pending
 
 
-async def test_the_brief_and_the_card_both_offer_the_decision_before_it_is_made(automation):
+async def test_only_the_card_offers_the_decision_before_it_is_made(automation):
+    """Plan §9.2 (14 Sep): one decision, one place to make it."""
     response, _ = await _posted(automation)
     (brief_blocks, _), (card_blocks, _) = messages_for(response)
 
-    assert {"approve", "reject"} <= _buttons(brief_blocks)
+    assert not {"approve", "reject"} & _buttons(brief_blocks)
     assert {"approve", "reject"} <= _buttons(card_blocks)
 
 

@@ -132,7 +132,7 @@ def test_a_stale_card_is_refused_privately_and_closed(world):
     assert executed == [] and gateway.outcome(INCIDENT, ACTION) is None
     assert said == [], "a refusal about one click is not announced to the incident channel"
     assert client.ephemeral[0]["user"] == "U0IC" and "older dry run" in client.ephemeral[0]["text"]
-    assert "Superseded" in json.dumps(client.updates[0]["blocks"])
+    assert "Replaced by a newer card" in json.dumps(client.updates[0]["blocks"])
 
 
 def test_an_engineer_refused_a_tier2_card_is_told_privately_and_the_card_stays_open():
@@ -177,7 +177,7 @@ def test_the_card_carries_its_dry_runs_digest_and_its_expiry(world):
     card = approval_card_for(pending)
 
     assert parse_decision(_click(card, "approve", "U0IC")).dry_run_digest == pending.digest
-    assert "expires" in json.dumps(card)
+    assert "Expires" in json.dumps(card)
 
 
 def test_closing_keeps_show_all_on_the_brief():

@@ -235,7 +235,7 @@ def test_the_card_states_the_promotion_reason():
 
     text = repr(approval_card_for(pending))
     assert "Tier 2" in text
-    assert "manager approval required" in text
+    assert "a manager" in text
     assert "namespace boundary" in text, "the card does not say why it escalated"
 
 
@@ -247,7 +247,7 @@ def test_the_card_for_a_declared_tier_2_says_it_was_declared():
 
     text = repr(approval_card_for(pending))
     assert "Tier 2" in text
-    assert "declared Tier 2 in the action catalog" in text
+    assert "always needs a manager" in text
 
 
 def test_the_card_shows_the_effective_tier_not_the_declared_one():
@@ -321,7 +321,7 @@ def test_an_ic_click_on_a_tier_2_card_is_told_it_needs_a_manager():
     assert runner.calls == []
     assert "manager" in reply
 
-    assert "executed once" in sink(
+    assert "ran once" in sink(
         Decision(
             kind="approve",
             incident_id=INCIDENT,

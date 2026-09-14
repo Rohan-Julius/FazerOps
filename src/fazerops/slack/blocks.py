@@ -63,8 +63,14 @@ def change_brief(
     proposal_summary: str | None = None,
     action_id: str | None = None,
     dry_run_digest: str | None = None,
+    decided_line: str | None = None,
 ) -> list[dict[str, Any]]:
     """The Tier 0 brief, posted automatically when an investigation completes.
+
+    Written for the on-call engineer who opens it mid-incident (user, 14 Sep): what changed, who,
+    when, and whether it went through CI, in words rather than scores and ids. It names the
+    proposed action and points to the approval card, where the decision is made (plan §9.2);
+    `decided_line` replaces that pointer once the decision is recorded.
 
     `proposal_summary` and `action_id` come from the automation layer (W22). They are
     optional because the brief is a Tier 0 artifact that must post whether or not any
@@ -80,9 +86,9 @@ def change_brief(
             "type": "context",
             "elements": [
                 _mrkdwn(
-                    f"*{brief.incident_id}*  ·  fired {_stamp(brief.alert.fired_at)}  ·  "
-                    f"searched {brief.window.hours:.0f}h across "
-                    f"cloudtrail, k8s_audit, helm, github"
+                    f"Alert fired {_stamp(brief.alert.fired_at)}. Searched the {brief.window.hours:.0f} hours "
+                    "before it in AWS (CloudTrail), the Kubernetes audit log, Helm and GitHub.  ·  "
+                    f"{brief.incident_id}"
                 )
             ],
         },
@@ -116,37 +122,41 @@ def change_brief(
     for candidate in shown:
         blocks.extend(_candidate_blocks(candidate, brief))
 
-    if brief.stability is not None:
-        from ..render.text import describe_stability
-
+    # Said only when it changes what the engineer should do. The dominant case read "no choice of
+    # weights ranks another change above it (lead 0.01)" — true, and a sentence nobody paged at 3am
+    # can use; the text renderer and the incident record still carry it.
+    stability = brief.stability
+    if stability is not None and not stability.dominant and 1 < (stability.challenger_rank or 0) <= len(brief.candidates):
+        challenger = brief.candidates[stability.challenger_rank - 1].event.resource
         blocks.append(
-            {"type": "context", "elements": [_mrkdwn(f"{_escape(describe_stability(brief.stability, brief))}")]}
+            {
+                "type": "context",
+                "elements": [
+                    _mrkdwn(
+                        f"*Close call:* #{stability.challenger_rank} {_escape(challenger.kind)} "
+                        f"{_escape(challenger.name)} is nearly as likely as #1. Check both before acting."
+                    )
+                ],
+            }
         )
 
     blocks.append({"type": "context", "elements": [_mrkdwn(_ci_line(brief))]})
 
     if brief.narrative:
-        blocks.append({"type": "section", "text": _mrkdwn(_escape(brief.narrative))})
+        blocks.append({"type": "section", "text": _mrkdwn(f"*What likely happened*\n{_escape(brief.narrative)}")})
 
     if brief.degraded:
         blocks.append(
             {
                 "type": "context",
                 "elements": [
-                    _mrkdwn(
-                        "*Degraded* — at least one change source was "
-                        "unavailable. This brief may be incomplete."
-                    )
+                    _mrkdwn("*Some change sources could not be searched*, so this list may be missing changes.")
                 ],
             }
         )
 
     for gap in brief.coverage_gaps:
-        from ..render.text import describe_coverage_gap
-
-        blocks.append(
-            {"type": "context", "elements": [_mrkdwn(f"{_escape(describe_coverage_gap(gap))}")]}
-        )
+        blocks.append({"type": "context", "elements": [_mrkdwn(_escape(_gap_line(gap)))]})
 
     blocks.extend(
         _proposal_blocks(
@@ -155,6 +165,7 @@ def change_brief(
             action_id=action_id,
             remaining=remaining,
             dry_run_digest=dry_run_digest,
+            decided_line=decided_line,
         )
     )
     return _bounded(blocks)
@@ -171,8 +182,14 @@ def approval_card(
     one_shot: str | None = None,
     coverage_note: str | None = None,
     expires_at: float | None = None,
+    cause: str | None = None,
 ) -> list[dict[str, Any]]:
     """The approval card. Handoff §9's four required elements, in its order.
+
+    Written for the on-call engineer deciding mid-incident (user, 14 Sep): what it will do and whose
+    change it undoes (`cause`), what will change, how to undo it, anything to do before or after, and
+    who may approve — each labelled in words. The action id, the inverse's call signature and a
+    "Tier" with no explanation were what the first live card showed.
 
     `one_shot` is W44's: `"human-written"` or `"generated"` for an action built for this incident
     and never added to the catalog, which the card says in so many words.
@@ -184,14 +201,12 @@ def approval_card(
     *effective* tier after `thresholds.yaml` promotion (W26) — a card that displayed the
     declared tier would understate an escalation on precisely the action that escalated.
     """
+    what = f"*{_escape(dry_run.summary)}*" + (f"\n{_escape(cause)}" if cause else "")
     blocks: list[dict[str, Any]] = [
         {"type": "header", "text": _plain("Approval required")},
-        {"type": "section", "text": _mrkdwn(f"*{_escape(dry_run.summary)}*")},
-        {
-            "type": "context",
-            "elements": [_mrkdwn(f"`{_escape(dry_run.target)}`  ·  *{incident_id}*")],
-        },
-        {"type": "section", "text": _mrkdwn(_code(_diff_text(dry_run)))},
+        {"type": "section", "text": _mrkdwn(what)},
+        {"type": "context", "elements": [_mrkdwn(f"On `{_escape(dry_run.target)}`")]},
+        {"type": "section", "text": _mrkdwn(f"*This will change*\n{_code(_diff_text(dry_run))}")},
     ]
 
     # Above the diff, where it is read before the decision: the ranking this card was drafted from
@@ -199,34 +214,20 @@ def approval_card(
     if coverage_note:
         blocks.insert(3, {"type": "context", "elements": [_mrkdwn(f"*{_escape(coverage_note)}*")]})
 
-    # Ground rule #4 on the one surface an operator actually reads. An action whose inverse
-    # could not be computed says so here in the same words `execute()` will refuse with,
-    # rather than letting someone approve something that is about to refuse.
+    # Ground rule #4 on the one surface an operator actually reads: an action whose inverse could not
+    # be computed says so, rather than letting someone approve something that is about to refuse.
     if dry_run.reversible:
-        blocks.append(
-            {
-                "type": "section",
-                "text": _mrkdwn(f"*Inverse*  `{_escape(dry_run.inverse_summary or '')}`"),
-            }
-        )
+        blocks.append({"type": "section", "text": _mrkdwn(f"To undo it: {_escape(_undo_text(dry_run))}")})
     else:
         blocks.append(
             {
                 "type": "section",
                 "text": _mrkdwn(
-                    "*No inverse could be computed.* This action will refuse "
-                    "to execute (ground rule #4)."
+                    "*This cannot run.* FazerOps could not work out how to undo it, and it never makes a "
+                    "change it cannot undo."
                 ),
             }
         )
-
-    tier_line = _tier_line(tier, escalation_reason)
-    if expires_at is not None:
-        # Stated where the decision is made: after this the click refuses (`ApprovalExpired`).
-        from datetime import datetime, timezone
-
-        tier_line += f"  ·  expires {datetime.fromtimestamp(expires_at, timezone.utc):%H:%M} UTC"
-    blocks.append({"type": "context", "elements": [_mrkdwn(tier_line)]})
 
     if provisional:
         progress = f"generated, {graduation[0]}/{graduation[1]}" if graduation else "generated"
@@ -235,30 +236,48 @@ def approval_card(
                 "type": "context",
                 "elements": [
                     _mrkdwn(
-                        f"*Provisional* ({progress}) — this action was generated from "
-                        "production evidence and needs a manager approval every time until it "
-                        "graduates."
+                        f"*Provisional action* ({progress}) — added from what engineers fixed by hand in "
+                        "past incidents, so a manager approves it every time until it has proven itself."
                     )
                 ],
             }
         )
 
     if one_shot:
+        # "Human-written writer" meant nothing to the engineer who first read it (user, 14 Sep): say who
+        # wrote the code that will run, and whether anyone reviewed it.
+        author = (
+            "Its code was written by the AI for this incident, and nobody has reviewed it (generated writer)."
+            if one_shot == "generated"
+            else "It uses FazerOps' own code for this kind of resource, written and reviewed by developers."
+        )
         blocks.append(
             {
                 "type": "context",
                 "elements": [
                     _mrkdwn(
-                        f"*One-shot* ({_escape(one_shot)} writer) — built for this incident only and not "
-                        "in the catalog. It was run in a sandbox first and touched nothing but the resource "
-                        "above; a manager approves it every time."
+                        "*One-shot action* — a one-time fix for this incident only, not one of the standard "
+                        f"actions. {author} It was tried in a sandbox first, where it changed nothing but the "
+                        "resource above. A manager must approve it."
                     )
                 ],
             }
         )
 
-    for note in dry_run.notes:
-        blocks.append({"type": "context", "elements": [_mrkdwn(f"{_escape(note)}")]})
+    # Above the buttons, not in small print below them: a note here can be the difference between
+    # an approval that fixes the incident and one that changes nothing until someone restarts pods.
+    if dry_run.notes:
+        bullets = "\n".join(f"• {_escape(note)}" for note in dry_run.notes)
+        blocks.append({"type": "section", "text": _mrkdwn(f"*Important*\n{bullets}")})
+
+    blocks.append({"type": "section", "text": _mrkdwn(_tier_line(tier, escalation_reason))})
+    footer = incident_id
+    if expires_at is not None:
+        # Stated where the decision is made: after this the click refuses (`ApprovalExpired`).
+        from datetime import datetime, timezone
+
+        footer = f"Expires {datetime.fromtimestamp(expires_at, timezone.utc):%H:%M} UTC  ·  {incident_id}"
+    blocks.append({"type": "context", "elements": [_mrkdwn(footer)]})
 
     # The buttons are omitted entirely when the action cannot run. Rendering a disabled
     # Approve is not a thing Block Kit offers, and rendering a live one next to a refusal
@@ -286,14 +305,14 @@ def _candidate_blocks(candidate: Candidate, brief: Brief) -> list[dict[str, Any]
     event = candidate.event
     minutes = (brief.alert.fired_at - event.occurred_at).total_seconds() / 60.0
 
-    heading = (
-        f"*#{candidate.rank}  {_escape(event.resource.kind)} "
-        f"{_escape(event.resource.name)}*  ·  score `{candidate.score:.2f}`"
-    )
+    # Written for the on-call engineer reading it mid-incident (user, 14 Sep): no score, no evidence
+    # id, no "in band". The score and the evidence ids are in the incident record, where a review
+    # reads them; here they were numbers and ids nobody could act on.
+    heading = f"*#{candidate.rank}  {_escape(event.resource.kind)} {_escape(event.resource.name)}*"
+    who = f"*{_escape(event.actor.display)}*" + ("" if event.actor.resolved else " _(not linked to a known person)_")
     detail = (
-        f"{event.action.value} by *{_escape(event.actor.display)}*"
-        f"{'' if event.actor.resolved else ' _(unresolved identity)_'}, "
-        f"{minutes:.0f} min before the alert"
+        f"{_ACTION_WORDS.get(event.action.value, event.action.value)} by {who} at "
+        f"{event.occurred_at:%H:%M} UTC, {_minutes_before(minutes)}"
     )
 
     blocks: list[dict[str, Any]] = [
@@ -304,14 +323,18 @@ def _candidate_blocks(candidate: Candidate, brief: Brief) -> list[dict[str, Any]
     if diff:
         blocks.append({"type": "section", "text": _mrkdwn(_code(diff))})
 
-    in_band = "yes" if event.in_band else "*no*"
-    blocks.append(
-        {
-            "type": "context",
-            "elements": [_mrkdwn(f"in band: {in_band}  ·  evidence `{_escape(event.id)}`")],
-        }
-    )
+    route = "Shipped through CI" if event.in_band else "*Changed outside CI* — no pull request or deploy record"
+    blocks.append({"type": "context", "elements": [_mrkdwn(route)]})
     return blocks
+
+
+_ACTION_WORDS = {"create": "Created", "update": "Changed", "delete": "Deleted"}
+
+
+def _minutes_before(minutes: float) -> str:
+    if minutes < 1:
+        return "less than a minute before the alert"
+    return f"{minutes:.0f} min before the alert"
 
 
 def _collapsed_diff(event: Any) -> str:
@@ -329,7 +352,7 @@ def _collapsed_diff(event: Any) -> str:
         if diff.prior_value_captured:
             lines.append(f"{field}: {before} → {after}")
         else:
-            lines.append(f"{field}: {after}  (new value; prior value not captured)")
+            lines.append(f"{field}: {after}  (new value; earlier value not recorded)")
 
     omitted = len(fields) - len(lines)
     if omitted:
@@ -344,14 +367,18 @@ def _proposal_blocks(
     action_id: str | None,
     remaining: int,
     dry_run_digest: str | None = None,
+    decided_line: str | None = None,
 ) -> list[dict[str, Any]]:
     blocks: list[dict[str, Any]] = [{"type": "divider"}]
 
     if proposal_summary and action_id:
+        # Composed by this process, like `close_decision`'s line, and left unescaped so its approver
+        # mention still renders as a mention.
+        follow = decided_line or "Approve or reject it on the approval card below."
         blocks.append(
-            {"type": "section", "text": _mrkdwn(f"*Proposed*  {_escape(proposal_summary)}")}
+            {"type": "section", "text": _mrkdwn(f"*Proposed fix:* {_escape(proposal_summary)}\n{follow}")}
         )
-        if brief.ranked_first_from is not None:
+        if brief.ranked_first_from is not None and decided_line is None:
             blocks.append(
                 {
                     "type": "context",
@@ -368,20 +395,15 @@ def _proposal_blocks(
             {
                 "type": "section",
                 "text": _mrkdwn(
-                    "_No action proposed. This brief is read-only — nothing will run._"
+                    "_No action proposed. This message only reports what changed — nothing will run._"
                 ),
             }
         )
 
-    blocks.append(
-        _actions(
-            brief.incident_id,
-            action_id,
-            dry_run_digest=dry_run_digest,
-            include_show_all=remaining > 0,
-            remaining=remaining,
-        )
-    )
+    # The decision is made on the approval card alone (plan §9.2, 14 Sep). The brief keeps only
+    # Show all changes, and says nothing at all when there is nothing more to show.
+    if remaining > 0:
+        blocks.append(_actions(brief.incident_id, None, include_show_all=True, remaining=remaining))
     return blocks
 
 
@@ -506,34 +528,74 @@ def _payload_action(value: Any) -> str | None:
 def _ci_line(brief: Brief) -> str:
     """Handoff §9 asks for an explicit CI line. Rendered from `merge_count`, never
     hardcoded — W11a's point is that the punchline is true because the data says so."""
-    from ..collectors.github import render_ci_status
-
-    return f"{_escape(render_ci_status(brief.ci_status))}"
+    # Names the span. "In this window" left an engineer asking which window; the terminal renderer
+    # keeps `collectors.github.render_ci_status`'s shorter form.
+    count = brief.ci_status.merge_count
+    span = f"in the {brief.window.hours:.0f} hours before the alert"
+    if count == 0:
+        return f"Nothing shipped through CI {span}."
+    return f"{count} merge{'' if count == 1 else 's'} shipped through CI {span}."
 
 
 def _tier_line(tier: Tier, escalation_reason: str | None) -> str:
+    """Who may approve, in words, with the tier kept alongside for the audit trail (Handoff §9)."""
     if tier is Tier.MANAGER_APPROVAL:
-        reason = escalation_reason or "declared Tier 2 in the action catalog"
-        return f"*Tier 2* — manager approval required. Escalated: {_escape(reason)}"
-    return "*Tier 1* — engineer approval required."
+        reason = escalation_reason or "this action always needs a manager"
+        return f"*Needs approval from:* a manager (Tier 2) — {_escape(reason)}"
+    return "*Needs approval from:* an on-call engineer (Tier 1). A manager can also approve."
 
 
 def _diff_text(dry_run: DryRun) -> str:
-    """The same lines `DryRun.render()` produces, minus its header — the two surfaces read
-    one `DryRun`, so they cannot disagree about what is about to change."""
+    """The lines `DryRun.render()` is built from, labelled for a person rather than a log. Both
+    surfaces read one `DryRun`, so they cannot disagree about what is about to change."""
     lines = []
     for line in dry_run.lines:
         if not line.prior_value_captured:
-            lines.append(f"{line.field}: {line.after}  (prior value not captured)")
+            lines.append(f"{line.field}: {line.after}  (earlier value not recorded)")
         elif not line.changed:
             lines.append(f"{line.field}: {line.after}  (unchanged)")
         else:
             lines.append(f"{line.field}: {line.before} → {line.after}")
 
     for reason in dry_run.unmet_preconditions:
-        lines.append(f"! precondition not met — {reason}")
+        # Preconditions arrive as `name: explanation`; the name is for the logs.
+        lines.append(f"Cannot run: {reason.split(': ', 1)[-1]}")
 
-    return "\n".join(lines) or "(no field-level diff available)"
+    return "\n".join(lines) or "(no field-by-field change to show)"
+
+
+def _undo_text(dry_run: DryRun) -> str:
+    """The inverse in words, read off the diff shown above it: each changed field set back to the value
+    it holds now. The computed inverse is what runs; this is how a person reads it."""
+    steps = [
+        f"roll back to revision {line.before}" if line.field == "revision" else f"set {line.field} back to {line.before}"
+        for line in dry_run.lines
+        if line.changed and line.prior_value_captured
+    ]
+    if not steps:
+        return f"run {dry_run.inverse_summary}" if dry_run.inverse_summary else "run the computed inverse"
+    return steps[0] if len(steps) == 1 else ", ".join(steps[:-1]) + " and " + steps[-1]
+
+
+def _gap_line(gap: Any) -> str:
+    """The brief's line for a source that reports late, in words. `render.text.describe_coverage_gap`
+    keeps the long form for the terminal and the incident record."""
+    from ..render.text import SOURCE_NAMES
+
+    name = SOURCE_NAMES.get(gap.source, gap.source)
+    if gap.status == "caught_up":
+        late = (
+            "no changes arrived late"
+            if gap.late_changes == 0
+            else f"{gap.late_changes} late change{'' if gap.late_changes == 1 else 's'} added above"
+        )
+        return f"{name} has caught up ({gap.checked_at:%H:%M} UTC): {late}."
+    if gap.status == "unreachable":
+        return f"{name} could not be re-checked, so changes made after {gap.unobserved.start:%H:%M} UTC may be missing."
+    return (
+        f"{name} changes from the last {gap.delivery_lag_minutes:.0f} minutes may not be visible yet. "
+        f"This message will update if any arrive (checking until {gap.settles_at:%H:%M} UTC)."
+    )
 
 
 def _alert_class_label(brief: Brief) -> str:

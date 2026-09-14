@@ -128,7 +128,7 @@ async def test_a_failing_upload_does_not_change_the_decision(tmp_path):
     [pending] = response.pending
     built.threads[pending.incident_id] = ("C0INCIDENT", "1.1")
 
-    assert "executed once" in _decide(built, pending)
+    assert "ran once" in _decide(built, pending)
 
 
 def test_the_server_remembers_the_brief_thread(automation):

@@ -193,4 +193,4 @@ def test_a_failing_log_changes_nothing_about_the_decision(world):
 
     reply = sink(click(pending))
 
-    assert "executed once" in reply and executed == [ACTION]
+    assert "ran once" in reply and executed == [ACTION]

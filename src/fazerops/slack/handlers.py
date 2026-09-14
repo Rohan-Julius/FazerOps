@@ -355,7 +355,26 @@ def _record_only(decision: Decision) -> str:
     )
 
 
-def approval_card_for(pending: Any, *, coverage_note: str | None = None) -> list[dict[str, Any]]:
+def _cause(pending: Any, brief: Any) -> str | None:
+    """Which change this card undoes, named as the brief above names it — or `None` without a brief.
+
+    Without it the card said what it would do and never why: the engineer had to match a ConfigMap
+    name back to a ranked list in another message to know whose change they were undoing.
+    """
+    if brief is None:
+        return None
+    cited = set(getattr(pending, "evidence_ids", ()) or ())
+    candidate = next((c for c in brief.candidates if c.event.id in cited), None)
+    if candidate is None:
+        return None
+    event = candidate.event
+    return (
+        f"Undoes the change {event.actor.display} made to {event.resource.kind} {event.resource.name} "
+        f"at {event.occurred_at:%H:%M} UTC (#{candidate.rank} in the brief above)."
+    )
+
+
+def approval_card_for(pending: Any, *, coverage_note: str | None = None, brief: Any = None) -> list[dict[str, Any]]:
     """Render the approval card for a `PendingApproval`. W26b.
 
     The one mapping from gateway state to card, so a caller cannot hand `approval_card` the
@@ -379,6 +398,7 @@ def approval_card_for(pending: Any, *, coverage_note: str | None = None) -> list
             else ("human-written" if pending.one_shot.authored_by == "human" else "generated")
         ),
         coverage_note=coverage_note,
+        cause=_cause(pending, brief),
     )
 
 
@@ -477,27 +497,57 @@ def approval_sink(
 def _refusal(decision: Decision, exc: Exception) -> Reply:
     """What a refused click is told, and how its card is closed when it should be."""
     from ..actions.approval import ApprovalExpired, ApproverNotPermitted, NotAwaitingApproval, StaleCard
+    from ..actions.roster import UnknownApprover
 
+    # Worded for the person who clicked (user, 14 Sep). The exception text — action ids, tiers,
+    # spec references — is what the decision log records; the first live refusal showed that text
+    # verbatim ("one_shot:data:k8s:… runs at tier 2 … U0C19V6DJ30 is engineer").
     if isinstance(exc, ApproverNotPermitted):
-        # Visible to the clicker, and it names the escalation. The card stays open: it is
-        # waiting for a manager, not decided.
-        return Reply(f"{exc}", private=True)
+        # The card stays open: it is waiting for a manager, not decided. It still says why, in words —
+        # the engineer who just clicked is the person least served by a tier number.
+        if getattr(exc, "one_shot", False):
+            because = " because it is a one-time fix built for this incident"
+        elif getattr(exc, "provisional", False):
+            because = " because it is a new action that is still on trial"
+        elif getattr(exc, "escalation_reason", None):
+            because = f" because {exc.escalation_reason}"
+        else:
+            because = ""
+        return Reply(
+            f"This needs manager approval{because}. You are listed as an engineer, so nothing has run — "
+            "the card stays open for a manager.",
+            private=True,
+        )
+    if isinstance(exc, UnknownApprover):
+        if "roster is empty" in str(exc):
+            return Reply(
+                "No approvers are set up yet (the approver roster is empty), so nobody can approve fixes. "
+                "Nothing has run.",
+                private=True,
+            )
+        return Reply(
+            "You are not on the approver roster, so you cannot approve fixes. Nothing has run — ask an "
+            "on-call engineer or a manager to approve it.",
+            private=True,
+        )
     if isinstance(exc, StaleCard):
         return Reply(
-            f"{exc}",
+            "This card is out of date: a newer card replaced it, so it shows an older dry run. Nothing has "
+            "run — use the newest card.",
             private=True,
-            card_line="Superseded by a newer card for this action. Nothing ran from this one.",
+            card_line="Replaced by a newer card. Nothing ran from this one.",
         )
     if isinstance(exc, ApprovalExpired):
         return Reply(
-            f"{exc}",
+            "This card expired before anyone decided, so what it was based on may be out of date. Nothing "
+            "has run — re-run the investigation to get a fresh card.",
             private=True,
-            card_line="Expired before a decision. Nothing ran — re-investigate for a fresh card.",
+            card_line="Expired before anyone decided. Nothing ran.",
         )
     if isinstance(exc, NotAwaitingApproval):
         return Reply(
-            f"No approval is open for `{decision.action_id}` on "
-            f"{decision.incident_id}. Nothing has run.",
+            "This fix is no longer waiting for approval — it was decided already, or the service restarted "
+            "since the card was posted. Nothing has run.",
             private=True,
             card_line="No longer open. Nothing ran.",
         )
@@ -515,20 +565,13 @@ def _result_of(outcome: Any) -> str:
 def _decided_line(outcome: Any) -> str:
     """The one line an outcome is announced with, and what the closed card shows."""
     if outcome.decision == "rejected":
-        return (
-            f"<@{outcome.approver}> rejected `{outcome.action_id}` for "
-            f"{outcome.incident_id}. Nothing has run."
-        )
+        return f"<@{outcome.approver}> rejected this. Nothing was changed."
     if outcome.error:
         return (
-            f"`{outcome.action_id}` was approved by <@{outcome.approver}> but "
-            f"failed: {outcome.error}. Check the resource before retrying — the "
-            "approval will not run again."
+            f"<@{outcome.approver}> approved this, but it failed: {outcome.error}. "
+            "Check the resource before trying again — this approval will not run a second time."
         )
-    return (
-        f"<@{outcome.approver}> approved `{outcome.action_id}` for "
-        f"{outcome.incident_id} (tier {int(outcome.tier)}); it executed once."
-    )
+    return f"<@{outcome.approver}> approved this, and it ran once."
 
 
 def post_brief(

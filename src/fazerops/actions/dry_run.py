@@ -194,8 +194,8 @@ def _kubectl_diff(request: ActionRequest, spec: Any) -> DryRun:
     hint = request.inverse_hint or {}
     target = f"{params['namespace']}/configmap/{params['name']}"
     reload_note = (
-        "Pods do not reload a mounted ConfigMap automatically; a rollout may be "
-        "required for this to take effect."
+        "Running pods do not pick up a ConfigMap change on their own. After this runs, restart "
+        "the workloads that mount it (for example, a rollout restart of the deployment)."
     )
 
     if params.get("keys") is not None:
@@ -252,10 +252,7 @@ def _kubectl_diff(request: ActionRequest, spec: Any) -> DryRun:
                 changed=str(current) != str(params["target_value"]),
             )
         ],
-        notes=[
-            "Pods do not reload a mounted ConfigMap automatically; a rollout may be "
-            "required for this to take effect."
-        ],
+        notes=[reload_note],
     )
 
 

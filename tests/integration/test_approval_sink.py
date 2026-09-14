@@ -199,7 +199,7 @@ def test_the_reply_names_the_approver_and_says_it_executed_once(wired):
             user_id="U0IC",
         )
     )
-    assert "<@U0IC>" in reply and "executed once" in reply
+    assert "<@U0IC>" in reply and "ran once" in reply
 
 
 def test_the_replay_reply_says_nothing_was_re_run(wired):
@@ -236,7 +236,7 @@ def test_an_ic_clicking_an_escalated_action_is_told_why():
     assert "namespace" in reply, "the operator is not told why it escalated"
 
     # The card stayed open for the manager it escalated to.
-    assert "executed once" in sink(
+    assert "ran once" in sink(
         Decision(
             kind="approve",
             incident_id=INCIDENT,

@@ -527,11 +527,17 @@ class ApprovalGateway:
                 why = f" It escalated because {pending.escalation_reason}."
             else:
                 why = ""
-            raise ApproverNotPermitted(
+            refusal = ApproverNotPermitted(
                 f"{action_id} runs at tier {int(pending.tier)} and requires a "
                 f"{ApproverRole.MANAGER.value} approval; {approver.user_id} is "
                 f"{approver.role.value}." + why
             )
+            # The message is for the decision log; these let Slack say the same thing in words
+            # (`slack.handlers._refusal`) without parsing it.
+            refusal.escalation_reason = pending.escalation_reason
+            refusal.provisional = pending.provisional and pending.tier is not Tier.MANAGER_APPROVAL
+            refusal.one_shot = pending.one_shot is not None
+            raise refusal
 
         # 3. Mint. This module is allowlisted in `credentials.MINTING_MODULES`; the call is
         #    direct rather than wrapped because the gate reads the *immediate* caller's
