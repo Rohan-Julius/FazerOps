@@ -22,6 +22,7 @@ a dependency the demo path never uses.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any, Callable, Literal
 
@@ -446,6 +447,19 @@ def approval_sink(
             # and none of them reaches `IncidentSession`.
             log(decision, approver, result="refused", reason=exc)
             return _refusal(decision, exc)
+        except Exception as exc:  # noqa: BLE001 - raised through Bolt, the clicker is told nothing
+            # A failure before the gateway records anything — the STS mint unreachable, the offline
+            # guard, a bug. Found live 14 Sep: the approver clicked, saw nothing, and the card stayed
+            # open, which reads exactly like an approval that silently did not happen.
+            logging.getLogger(__name__).exception(
+                "approval of %s on %s failed before a decision was recorded", decision.action_id, decision.incident_id
+            )
+            log(decision, approver, result="failed", reason=exc)
+            return Reply(
+                f"Could not complete that for `{decision.action_id}` on {decision.incident_id} "
+                f"({type(exc).__name__}). No decision was recorded and the card is still open.",
+                private=True,
+            )
 
         log(decision, approver, result=_result_of(outcome), reason=outcome.error, tier=int(outcome.tier))
         if outcome.replay:

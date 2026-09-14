@@ -20,6 +20,7 @@ Creates nothing. Deleting the parameter group afterwards is the operator's.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import threading
 import time
@@ -58,6 +59,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--apply-method", default="immediate", choices=["immediate", "pending-reboot"])
     parser.add_argument("--wait", type=float, default=1800, help="seconds to wait for the click")
     args = parser.parse_args(argv)
+
+    # The offline guard refuses the STS call at click time in fixture mode, after the card is up.
+    if os.environ.get("FAZEROPS_MODE") != "live":
+        raise SystemExit("set FAZEROPS_MODE=live: the approval assumes the actor role through STS")
 
     rds = boto3.client("rds")
     # Existence is read from RDS, not asserted: `parameter_group_exists` fails closed on an

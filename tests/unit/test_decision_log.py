@@ -104,6 +104,27 @@ def test_an_engineer_on_a_tier2_card_is_recorded_with_the_reason(world):
     assert entry["reason"].startswith("ApproverNotPermitted")
 
 
+def test_a_failure_before_the_decision_is_told_to_the_clicker_and_leaves_the_card_open(world, monkeypatch):
+    gateway, log, sink, executed = world
+    pending = gateway.register(INCIDENT, a_request(), evidence=EVIDENCE)
+
+    def unreachable(*args, **kwargs):
+        raise RuntimeError("credentials attempted to construct a network client")
+
+    monkeypatch.setattr("fazerops.actions.approval.mint_actor_credential", unreachable)
+    reply = sink(click(pending))
+
+    assert reply is not None and reply.private and "No decision was recorded" in reply
+    assert reply.card_line is None, "nothing was decided, so the card must keep its buttons"
+    [entry] = log.entries()[0]
+    assert entry["result"] == "failed" and entry["reason"].startswith("RuntimeError")
+    assert executed == [] and gateway.outcome(INCIDENT, ACTION) is None
+
+    monkeypatch.undo()
+    sink(click(pending))
+    assert executed == [ACTION], "the same card still executes once the failure is gone"
+
+
 def test_a_stale_card_is_recorded_as_refused(world):
     gateway, log, sink, _ = world
     first = gateway.register(INCIDENT, a_request("20"), evidence=EVIDENCE)
