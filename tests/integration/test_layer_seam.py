@@ -184,5 +184,5 @@ async def test_the_brief_is_json_serializable_without_the_automation_layer(
     brief = await investigate(alert)
 
     payload = json.loads(brief.model_dump_json())
-    assert payload["incident_id"] == "INC-7c1f9a2e4b6d8033"
+    assert payload["incident_id"] == "INC-7c1f9a2e4b6d8033-20260906T144100Z"
     assert payload["candidates"][0]["rank"] == 1

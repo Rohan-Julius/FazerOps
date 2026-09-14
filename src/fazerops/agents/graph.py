@@ -44,7 +44,7 @@ from strands.multiagent.base import MultiAgentBase, MultiAgentResult, NodeResult
 from strands.telemetry.metrics import EventLoopMetrics
 
 from ..collectors.base import Collector, CollectorResult
-from ..models import Alert, Brief, CIStatus
+from ..models import Alert, Brief, CIStatus, incident_id_for
 from .orchestrator import OrchestrationSession, Plan
 
 __all__ = [
@@ -375,7 +375,7 @@ def _brief_from(state: InvestigationState, *, narrative: Any) -> Brief:
 
     narrative = narrative if narrative is not None else state.narrative
     return Brief(
-        incident_id=f"INC-{state.alert.id}",
+        incident_id=incident_id_for(state.alert),
         alert=state.alert,
         radius=plan.radius,
         window=plan.window,

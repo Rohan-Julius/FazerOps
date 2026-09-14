@@ -54,7 +54,7 @@ def _alert_payload(name: str = "alertmanager.json") -> dict:
 async def test_the_entrypoint_returns_the_demo_brief(entrypoint):
     response = await entrypoint.invoke({"alert": _alert_payload()})
 
-    assert response["incident_id"] == "INC-7c1f9a2e4b6d8033"
+    assert response["incident_id"] == "INC-7c1f9a2e4b6d8033-20260906T144100Z"
     assert "billing-api-config" in response["brief"]
     assert "pool.max: 100 → 20" in response["brief"]
     assert response["stage"] == "investigated"
@@ -66,7 +66,7 @@ async def test_a_bare_alert_payload_works_too(entrypoint):
     real caller sends one of the three payload shapes `ingest/alerts.py` normalizes."""
     response = await entrypoint.invoke(_alert_payload())
 
-    assert response["incident_id"] == "INC-7c1f9a2e4b6d8033"
+    assert response["incident_id"] == "INC-7c1f9a2e4b6d8033-20260906T144100Z"
 
 
 @pytest.mark.parametrize("shape", ["alertmanager.json", "cloudwatch.json", "pagerduty.json"])
@@ -83,7 +83,7 @@ async def test_the_whole_response_is_json_serializable(entrypoint):
     response = await entrypoint.invoke({"alert": _alert_payload()})
 
     encoded = json.dumps(response)  # raises on anything that is not JSON
-    assert json.loads(encoded)["incident_id"] == "INC-7c1f9a2e4b6d8033"
+    assert json.loads(encoded)["incident_id"] == "INC-7c1f9a2e4b6d8033-20260906T144100Z"
 
     def _no_datetimes(value, path="response"):
         assert not isinstance(value, datetime), f"{path} is a datetime"
@@ -241,4 +241,4 @@ async def test_the_session_is_recordable_without_the_automation_layer_having_run
     assert session.approval is None
     assert session.execution is None
     assert session.stage == "investigated"
-    assert json.loads(session.model_dump_json())["incident_id"] == "INC-7c1f9a2e4b6d8033"
+    assert json.loads(session.model_dump_json())["incident_id"] == "INC-7c1f9a2e4b6d8033-20260906T144100Z"

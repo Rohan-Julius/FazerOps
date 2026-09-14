@@ -288,6 +288,22 @@ class Alert(BaseModel):
         return value.astimezone(timezone.utc)
 
 
+def incident_id_for(alert: Alert) -> str:
+    """One id per *firing*, not per alert rule.
+
+    `alert.id` is the source's own identifier — Alertmanager's `fingerprint`, CloudWatch's
+    `AlarmName` — and both are stable across every firing of the same rule. An incident id
+    built from it alone made next week's incident on the same alarm reuse this week's
+    `(incident_id, action_id)` idempotency key, so the gateway refused its action as already
+    decided (drift log, 14 Sep, D2). `fired_at` separates firings while a *re-delivery* of one
+    firing — Alertmanager's `repeat_interval`, a webhook retry — keeps the same id, which is what
+    alert deduplication keys on.
+    """
+    # Converted here as well as by the validator: `model_copy(update=...)` skips validation, and an
+    # id formatted in a local offset would split one firing into two incidents.
+    return f"INC-{alert.id}-{alert.fired_at.astimezone(timezone.utc):%Y%m%dT%H%M%SZ}"
+
+
 # --------------------------------------------------------------------------------------
 # The seam — plan §3.5. Frozen contract between investigation and automation.
 # --------------------------------------------------------------------------------------

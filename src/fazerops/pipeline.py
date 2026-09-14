@@ -28,7 +28,7 @@ from .collectors.k8s_audit import K8sAuditCollector
 from .correlation.scoring import score_events
 from .correlation.sensitivity import rank_stability
 from .ledger.store import LedgerStore
-from .models import Alert, Brief, CIStatus, TimeWindow
+from .models import Alert, Brief, CIStatus, TimeWindow, incident_id_for
 
 DEFAULT_WINDOW_HOURS = 4  # Handoff Q3, bounded [1, 24] by the orchestrator's tool schema
 
@@ -121,7 +121,7 @@ async def investigate(
     )
 
     return Brief(
-        incident_id=f"INC-{alert.id}",
+        incident_id=incident_id_for(alert),
         alert=alert,
         radius=radius,
         window=window,
