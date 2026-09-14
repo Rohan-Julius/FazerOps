@@ -173,6 +173,48 @@ def test_radius_overlap_is_set_intersection():
     assert radius.overlaps({"k8s:other/configmap/unrelated"}) is False
 
 
+_DUMP_IN_A_FRESH_PROCESS = """
+from datetime import datetime, timezone
+from fazerops.models import Actor, BlastRadius, ChangeEvent, NormalizedAction, ResourceRef
+keys = {f"k8s:ns/configmap/cm-{i}" for i in range(12)} | {"service:billing-api"}
+event = ChangeEvent(
+    id="k8s-1", source="k8s_audit", occurred_at=datetime(2026, 9, 6, 12, tzinfo=timezone.utc),
+    actor=Actor(raw="dinesh@example.com", canonical="dinesh", resolved=True, kind="human"),
+    action=NormalizedAction.UPDATE, resource=ResourceRef(kind="ConfigMap", name="cm-0", namespace="ns"),
+    in_band=False, raw_ref="audit.log#L1", blast_radius_keys=keys,
+)
+radius = BlastRadius(service="billing-api", keys=keys, direct_keys=keys)
+print(event.model_dump_json() + radius.model_dump_json())
+"""
+
+
+def test_set_fields_serialize_identically_in_every_process():
+    """String hashes are salted per process, so a set dumped in iteration order differs between
+    the process that stores a session and the one that reads it back — the deployed Runtime's
+    read-back failed on exactly that (14 Sep). A single process cannot see it, hence the seeds."""
+    import os
+    import subprocess
+    import sys
+
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+    dumps = {
+        subprocess.run(
+            [sys.executable, "-c", _DUMP_IN_A_FRESH_PROCESS],
+            env={**env, "PYTHONHASHSEED": seed},
+            capture_output=True, text=True, check=True,
+        ).stdout
+        for seed in ("1", "2", "3", "4")
+    }
+    assert len(dumps) == 1
+
+
+def test_set_fields_stay_sets_outside_json():
+    """Sorting is a JSON-only concern; scoring code intersects these as sets."""
+    radius = BlastRadius(service="billing-api", keys={"b", "a"}, direct_keys={"a"})
+    assert radius.model_dump()["keys"] == {"a", "b"}
+    assert radius.model_dump(mode="json")["keys"] == ["a", "b"]
+
+
 # --- brief ----------------------------------------------------------------------------
 
 

@@ -24,6 +24,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    field_serializer,
     field_validator,
     model_validator,
 )
@@ -200,6 +201,12 @@ class ChangeEvent(BaseModel):
     )
     raw_ref: str = Field(description="Pointer to the original payload, never its contents")
 
+    # A set dumps in hash order, and string hashes are salted per process, so the same event
+    # serialized by two processes differed — the deployed read-back failed on exactly that (14 Sep).
+    @field_serializer("blast_radius_keys", when_used="json")
+    def _sorted_keys(self, keys: set[str]) -> list[str]:
+        return sorted(keys)
+
     @field_validator("occurred_at")
     @classmethod
     def _to_utc(cls, value: datetime) -> datetime:
@@ -258,6 +265,11 @@ class BlastRadius(BaseModel):
         description="Keys belonging to the named service itself. The one-hop dependency "
         "keys score lower in W14's radius_overlap, so the two are kept distinct.",
     )
+
+    # Same reason as `ChangeEvent._sorted_keys`.
+    @field_serializer("keys", "direct_keys", when_used="json")
+    def _sorted_keys(self, keys: set[str]) -> list[str]:
+        return sorted(keys)
 
     def overlaps(self, event_keys: set[str]) -> bool:
         return bool(self.keys & event_keys)
