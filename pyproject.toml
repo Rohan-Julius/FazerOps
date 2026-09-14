@@ -24,6 +24,9 @@ cluster = ["kubernetes>=30.1"]
 # is the clean-machine path W30 verifies. It was installed ad hoc until 12 Sep, which meant
 # a `uv sync` silently removed it and took the Gemini path down with it.
 gemini = ["google-genai>=1.0"]
+aws = [
+    "botocore[crt]>=1.43.89",
+]
 
 [dependency-groups]
 dev = [

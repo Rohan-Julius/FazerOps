@@ -80,6 +80,12 @@ if [ ! -s "$AUDIT_DIR/audit.log" ]; then
   exit 1
 fi
 
+# On a native Linux Docker engine the bind mount keeps the API server's ownership: the log is
+# root's, mode 0600, and the collector (running as the invoking user) cannot open it. Docker
+# Desktop's file sharing hides this. The API server's log rotation copies the old file's mode onto
+# the new one, so opening it up once, from inside the container, holds across rotations.
+docker exec "k3d-$CLUSTER-server-0" sh -c "chmod 0644 $AUDIT_DIR_IN_CONTAINER/*"
+
 # D3 (drift log, 14 Sep): an approved execution impersonates the approver into this group, so the
 # audit log names who approved it instead of recording every revert as the kubeconfig's admin.
 kubectl --context "k3d-$CLUSTER" apply -f "$REPO_ROOT/config/k8s/fazerops-actor-rbac.yaml"
