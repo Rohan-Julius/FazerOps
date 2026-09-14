@@ -31,12 +31,15 @@ Investigation layer — this module imports nothing from `actions/`, `slack/hand
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..models import Alert, BlastRadius, TimeWindow
 from ..radius import default_manifest
+from .budget import BudgetExceeded
 
 __all__ = [
     "MAX_TURNS",
@@ -379,28 +382,33 @@ async def _invoke(
     )
 
     note: str | None = None
+    result = None
     try:
         result = await agent.invoke_async(
             _decision_messages(session.alert)[0]["content"],
             limits=Limits(turns=MAX_TURNS),
         )
     except Exception as exc:  # noqa: BLE001 - see this function's docstring
-        # Includes the turn cap being hit. Strands raises rather than returning a partial
-        # result, and the partial result is exactly what we want: whatever tools *did*
-        # run left their answers in the session, so the fallback below is often the
-        # model's own radius with only the dispatch missing.
+        # A model error that escaped the loop — a 429 or 5xx after Strands' own retries. The
+        # turn cap is not one: strands 1.54 returns with `stop_reason="limit_turns"` rather
+        # than raising. Whatever tools *did* run left their answers in the session, so the
+        # fallback below is often the model's own radius with only the dispatch missing.
         note = f"orchestrator did not finish ({type(exc).__name__}); default scope used"
-        result = None
+    except asyncio.CancelledError:
+        # The graph node's clock (`ORCHESTRATOR_TIMEOUT_SECONDS`). Every turn that completed
+        # was billed, and this is the retrying loop the meter exists to see, so it is recorded
+        # before the cancellation goes on. A cap it trips is already on the ledger —
+        # `TokenMeter.record` writes first — and must not replace the cancellation, which is
+        # what turns this into a timeout the node absorbs.
+        if meter is not None:
+            with contextlib.suppress(BudgetExceeded):
+                _record_usage(meter, model_id, agent, result)
+        raise
 
-    if meter is not None and result is not None:
-        usage = _usage_from(result)
-        meter.record(
-            "orchestrator",
-            model_id,
-            usage["in"],
-            usage["out"],
-            estimated=usage.get("estimated", False),
-        )
+    if meter is not None:
+        # Recorded whether or not the loop finished: the turns before an exception were billed
+        # too, and skipping them when `result` was `None` kept the costliest runs off the ledger.
+        _record_usage(meter, model_id, agent, result)
 
     if session.dispatched and session.last_radius is not None:
         radius_id, window_id = session.dispatched[-1]
@@ -462,8 +470,23 @@ def _client_for(provider: Any, model_id: str) -> Any:
     return _gemini_model(model_id) if provider is Provider.GEMINI else _bedrock_model(model_id)
 
 
-def _usage_from(result: Any) -> dict[str, int]:
+def _record_usage(meter: Any, model_id: str, agent: Any, result: Any | None) -> None:
+    usage = _usage_from(result, agent=agent)
+    meter.record(
+        "orchestrator",
+        model_id,
+        usage["in"],
+        usage["out"],
+        estimated=usage.get("estimated", False),
+    )
+
+
+def _usage_from(result: Any, *, agent: Any | None = None) -> dict[str, int]:
     """Real token counts off the `AgentResult` when the provider reported them.
+
+    With no result — the loop raised or was cancelled — they come off the `Agent`'s own
+    `event_loop_metrics`, which is the object an `AgentResult` carries as `metrics` and which
+    Strands accumulates after every model call, so the completed turns are still counted.
 
     Unlike the correlator's structured-output path — where Strands' Gemini branch yields
     no usage event at all (U6a) — an agentic loop goes through the streaming path, which
@@ -471,7 +494,8 @@ def _usage_from(result: Any) -> dict[str, int]:
     here. `estimated` is still carried, because "expected to" is not "observed to" and a
     ledger that cannot tell a measurement from a guess is the thing W17 exists to prevent.
     """
-    usage = getattr(getattr(result, "metrics", None), "accumulated_usage", None) or {}
+    metrics = getattr(result, "metrics", None) or getattr(agent, "event_loop_metrics", None)
+    usage = getattr(metrics, "accumulated_usage", None) or {}
     if usage.get("inputTokens") is not None:
         return {"in": int(usage["inputTokens"]), "out": int(usage.get("outputTokens", 0))}
 

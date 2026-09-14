@@ -48,10 +48,13 @@ from ..models import Alert, Brief, CIStatus, incident_id_for
 from .orchestrator import OrchestrationSession, Plan
 
 __all__ = [
+    "ANNOTATION_NODES",
     "COLLECTOR_NODES",
+    "CORRELATOR_TIMEOUT_SECONDS",
     "GRAPH_TIMEOUT_MULTIPLE",
     "NODE_TIMEOUT_SECONDS",
     "ORCHESTRATOR_TIMEOUT_SECONDS",
+    "PROPOSER_TIMEOUT_SECONDS",
     "FunctionNode",
     "InvestigationState",
     "build_investigation_graph",
@@ -85,7 +88,24 @@ GRAPH_TIMEOUT_MULTIPLE = 4.0
 # strictly shorter than the graph's backstop, so the node's timeout is always the one that fires.
 ORCHESTRATOR_TIMEOUT_SECONDS = 90.0
 
+# **The correlator's and the proposer's own bounds**, for the orchestrator's reason one node later.
+# Each is a live `structured_output` call with thinking, up to three attempts and 6 s of backoff
+# (`correlator._retrying_transient`), and the proposer may make a second call after a decline
+# (`one_shots.offer`). Left to the backstop, a slow one failed the graph and threw away a ranked,
+# cited brief that was already assembled; inside the node it costs the narrative or the proposal.
+# Same value and same constraint as the orchestrator's: strictly shorter than the backstop.
+CORRELATOR_TIMEOUT_SECONDS = 90.0
+PROPOSER_TIMEOUT_SECONDS = 90.0
+
 COLLECTOR_NODES = ("cloudtrail", "k8s_audit", "helm", "github")
+
+# Nodes that annotate the evidence rather than gather or scope it. A failure in one of these —
+# a rejected narrative, a rejected proposal, a timeout — costs the brief its explanation or its
+# action and nothing it lists, so it is recorded in `node_errors` but does not mark the brief
+# degraded. `Brief.degraded` renders as "a change source was unavailable", and on a quiet window
+# every source answered: the correlator rejecting a narrative over zero candidates was printing
+# that on the honest "nothing changed" brief. `pipeline.investigate` never counted them either.
+ANNOTATION_NODES = frozenset({"correlator", "proposer"})
 
 
 class InvestigationState:
@@ -109,7 +129,7 @@ class InvestigationState:
     @property
     def degraded(self) -> bool:
         return (
-            bool(self.node_errors)
+            any(name not in ANNOTATION_NODES for name in self.node_errors)
             or any(not result.ok for result in self.results)
             or (self.plan is not None and self.plan.degraded)
         )
@@ -223,12 +243,14 @@ def _correlator_node(state: InvestigationState) -> Any:
             state.narrative = await correlate(brief, meter=state.meter)
         except NarrativeRejected as exc:
             # Handoff §6: a brief with no explanation is still a ranked, cited list of what
-            # changed, which is the product. A wrong explanation is not.
+            # changed, which is the product. A wrong explanation is not. Recorded by name so
+            # a caller can say why there is no narrative; not degraded — see ANNOTATION_NODES.
             state.node_errors["correlator"] = str(exc)
             return "narrative rejected"
         return f"narrative: {len(state.narrative.claims)} claims"
 
-    return FunctionNode("correlator", run, state)
+    # Bounded inside the node — see CORRELATOR_TIMEOUT_SECONDS.
+    return FunctionNode("correlator", run, state, timeout=CORRELATOR_TIMEOUT_SECONDS)
 
 
 def _require_plan(state: InvestigationState) -> Plan:

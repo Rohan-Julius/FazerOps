@@ -9,8 +9,9 @@ module registered before the card was ever posted.
 Four properties hold structurally rather than by care:
 
 1. **A replay executes once.** Outcomes are keyed `(incident_id, action_id)`, first-write-
-   wins, and the key is checked before a credential is minted. A double-clicked button, a
-   Slack retry and a resent payload are all the same event to this module.
+   wins, and the key is checked and **claimed under a lock** before a credential is minted.
+   A double-clicked button, a Slack retry and a resent payload are all the same event to this
+   module — including when they arrive at the same moment on two listener threads.
 2. **Approval is unreachable without a dry run.** `decide()` resolves a `PendingApproval`
    or refuses, and `register()` is the only thing that builds one — rendering the dry run
    as it does. There is no path from a raw `ActionRequest` to `execute()` through here.
@@ -29,6 +30,7 @@ Four properties hold structurally rather than by care:
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections.abc import Iterable
 from datetime import datetime, timezone
@@ -321,6 +323,12 @@ class ApprovalGateway:
         self._graduation = graduation
         self._pending: dict[tuple[str, str], PendingApproval] = {}
         self._outcomes: dict[tuple[str, str], Outcome] = {}
+        # Keys a `decide()` is running for right now. The outcome table alone cannot stop a double
+        # execution: nothing is written to it until the mutation has finished, and Slack's Socket
+        # Mode client hands two deliveries of one click to two pool threads at once. The condition
+        # lets a second caller wait for the first's outcome instead of polling for it.
+        self._deciding: set[tuple[str, str]] = set()
+        self._decided = threading.Condition()
 
     # -- registration ------------------------------------------------------------------
 
@@ -489,15 +497,53 @@ class ApprovalGateway:
         digest and expiry checks run after the replay check — a replay answers with the first
         outcome whatever card it came from — and before either decision is recorded, so a stale
         or expired click changes nothing.
+
+        **Concurrent calls for one key run one at a time.** The key is claimed under a lock before
+        anything else; a second caller waits for the claim to be released and then answers from
+        the outcome as a replay. A call that records nothing — a refusal, or a mint that raised —
+        releases the claim with no outcome, and the waiter then decides for itself, so a failure
+        that ran nothing never blocks the retry.
         """
         key = (incident_id, action_id)
 
-        # 1. Replay. Returned rather than raised: a second click is a human being human,
-        #    and the useful answer is what the first click did.
-        decided = self._outcomes.get(key)
-        if decided is not None:
-            return decided.model_copy(update={"replay": True})
+        # 1. Replay, and the claim. Returned rather than raised: a second click is a human being
+        #    human, and the useful answer is what the first click did — so a click that arrives
+        #    while the first is still executing waits for that answer rather than being refused.
+        with self._decided:
+            while True:
+                decided = self._outcomes.get(key)
+                if decided is not None:
+                    return decided.model_copy(update={"replay": True})
+                if key not in self._deciding:
+                    self._deciding.add(key)
+                    break
+                self._decided.wait()
 
+        try:
+            return self._decide_claimed(
+                incident_id=incident_id,
+                action_id=action_id,
+                approver=approver,
+                kind=kind,
+                dry_run_digest=dry_run_digest,
+            )
+        finally:
+            # Released whatever happened. The outcome, if any, is already in the table, so a waiter
+            # woken here returns it as a replay; with none, the waiter takes the claim itself.
+            with self._decided:
+                self._deciding.discard(key)
+                self._decided.notify_all()
+
+    def _decide_claimed(
+        self,
+        *,
+        incident_id: str,
+        action_id: str,
+        approver: Approver,
+        kind: Literal["approve", "reject"],
+        dry_run_digest: str | None,
+    ) -> Outcome:
+        """`decide()` past the replay check, with the key claimed by this call alone."""
         pending = self.pending(incident_id, action_id)
 
         if dry_run_digest is not None and dry_run_digest != pending.digest:
@@ -541,7 +587,7 @@ class ApprovalGateway:
 
         # 3. Mint. This module is allowlisted in `credentials.MINTING_MODULES`; the call is
         #    direct rather than wrapped because the gate reads the *immediate* caller's
-        #    frame, and a helper here would put that helper's module in the check instead.
+        #    frame, and a helper elsewhere would put that helper's module in the check instead.
         credential = mint_actor_credential(
             incident_id=incident_id,
             action_id=action_id,

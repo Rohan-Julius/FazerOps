@@ -45,6 +45,11 @@ _DESCRIPTION_VERBS = (
     ("deletion", "uninstall"),
 )
 
+# The `status` values of a revision that actually ran: the current release, or one a later
+# revision replaced. `failed`, `pending-*`, `uninstalled` and `unknown` never became the running
+# release, so rolling back to one would restore a manifest that did not work, or never applied.
+ROLLBACK_TARGET_STATUSES = frozenset({"deployed", "superseded"})
+
 
 class HelmCollector(BaseCollector):
     source = "helm"
@@ -101,6 +106,11 @@ class HelmCollector(BaseCollector):
         The previous revision is attached to each item because it is this collector's
         reason for existing: Handoff §5 notes revision N-1 is `helm_rollback`'s inverse for
         free, and only the whole history knows what N-1 was.
+
+        "N-1" means the last earlier revision that deployed, not the adjacent number. After a
+        failed upgrade (rev 3) and a successful retry (rev 4), rolling rev 4 back to rev 3
+        restores the release that failed; rev 2 is the last one known to work. With no earlier
+        revision that deployed, there is nothing safe to roll back to, and no hint is recorded.
         """
         flattened: list[dict[str, Any]] = []
 
@@ -110,16 +120,18 @@ class HelmCollector(BaseCollector):
                 continue
 
             history = sorted(payload.get("history") or [], key=lambda e: e.get("revision", 0))
-            for index, entry in enumerate(history):
-                previous = history[index - 1] if index > 0 else None
+            last_deployed = None
+            for entry in history:
                 flattened.append(
                     {
                         **entry,
                         "release": release,
                         "namespace": namespace,
-                        "previous_revision": previous.get("revision") if previous else None,
+                        "previous_revision": last_deployed,
                     }
                 )
+                if str(entry.get("status", "")).lower() in ROLLBACK_TARGET_STATUSES:
+                    last_deployed = entry.get("revision")
 
         return flattened
 

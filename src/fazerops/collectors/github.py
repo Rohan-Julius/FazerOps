@@ -20,15 +20,24 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime
 from typing import Any
 
 from ..config import require_offline_capable
-from ..ledger.normalize import blast_radius_keys, normalize_action, normalize_actor
+from ..ledger.normalize import blast_radius_keys, normalize_action, normalize_actor, parse_timestamp
 from ..models import BlastRadius, ChangeEvent, CIStatus, ResourceRef, TimeWindow
 from .base import BaseCollector, CollectorResult
 
 API_ROOT = "https://api.github.com"
 HTTP_TIMEOUT_SECONDS = 15
+
+# Listings are paged rather than read one page deep. A busy repository updates more than a
+# hundred closed pull requests in four hours — comments, labels and bots all bump `updated_at` —
+# and a merge that sorts past the first page would render as "Nothing shipped through CI". Bounded,
+# so a runaway listing cannot hold the brief, and hitting the bound is reported rather than
+# swallowed: the result is marked incomplete and the brief degraded (see `_paged`).
+PER_PAGE = 100
+MAX_PAGES = 5
 
 # Merges and direct pushes are both collected (W11) and are told apart by this prefix.
 # The distinction is load-bearing rather than cosmetic: `ci_status_from` counts merges, and
@@ -62,22 +71,30 @@ class GitHubCollector(BaseCollector):
         require_offline_capable("GitHubCollector")
 
         payloads: list[dict[str, Any]] = []
+        unread: list[str] = []
         for repo in _repos_in(radius):
             repository = await self._get(f"/repos/{repo}")
             branch = repository.get("default_branch", "main")
 
-            pulls = await self._get(
+            pulls, complete = await self._paged(
                 f"/repos/{repo}/pulls",
+                # Newest update first, and a merge updates its pull request, so once a page ends on
+                # one last touched before the window opened, nothing after it merged inside the
+                # window. That is where the listing stops, well before the page bound on most repos.
+                updated_before=window.start,
                 state="closed",
                 base=branch,
                 sort="updated",
                 direction="desc",
-                per_page="100",
             )
             payloads.extend(pulls)
+            if not complete:
+                unread.append(f"{repo} pull requests")
 
             merge_shas = {pull.get("merge_commit_sha") for pull in pulls if pull.get("merged_at")}
-            commits = await self._commits(repo, branch, window)
+            commits, complete = await self._commits(repo, branch, window)
+            if not complete:
+                unread.append(f"{repo} commits")
 
             for commit in commits:
                 if commit.get("sha") in merge_shas:
@@ -90,12 +107,35 @@ class GitHubCollector(BaseCollector):
                     continue
                 payloads.append({**commit, "repo": repo, "branch": branch})
 
+        if unread:
+            self._incomplete = (
+                f"truncated: more than {MAX_PAGES * PER_PAGE} results for {', '.join(unread)}; "
+                "the rest were not read"
+            )
         return payloads
+
+    async def _paged(
+        self, path: str, *, updated_before: datetime | None = None, **params: str
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Up to `MAX_PAGES` pages of a listing, and whether it was read to its end.
+
+        Stops at the first short page, which is GitHub's last, or — given `updated_before` — at a
+        page whose final item was last updated before that instant. Reaching the bound with a
+        full page still in hand returns `False`: the brief must never say "nothing shipped" off a
+        listing nobody finished reading.
+        """
+        items: list[dict[str, Any]] = []
+        for page in range(1, MAX_PAGES + 1):
+            batch = await self._get(path, **params, per_page=str(PER_PAGE), page=str(page))
+            items.extend(batch)
+            if len(batch) < PER_PAGE or _last_updated_before(batch, updated_before):
+                return items, True
+        return items, False
 
     async def _commits(
         self, repo: str, branch: str, window: TimeWindow
-    ) -> list[dict[str, Any]]:
-        """Default-branch commits in the window.
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Default-branch commits in the window, and whether the listing was read to its end.
 
         **An empty repository answers 409, not 200 with an empty list.** GitHub treats
         "this repo has no commits yet" as a conflict on the commits endpoint, and a repo
@@ -109,16 +149,15 @@ class GitHubCollector(BaseCollector):
         fixture-backed test could have produced it.
         """
         try:
-            return await self._get(
+            return await self._paged(
                 f"/repos/{repo}/commits",
                 sha=branch,
                 since=window.start.isoformat().replace("+00:00", "Z"),
                 until=window.end.isoformat().replace("+00:00", "Z"),
-                per_page="100",
             )
         except urllib.error.HTTPError as exc:
             if exc.code == 409:
-                return []
+                return [], True
             raise
 
     async def _get(self, path: str, **params: str) -> Any:
@@ -214,6 +253,20 @@ def _repos_in(radius: BlastRadius) -> list[str]:
     return sorted(key.split(":", 1)[1] for key in radius.keys if key.startswith("repo:"))
 
 
+def _last_updated_before(batch: list[dict[str, Any]], instant: datetime | None) -> bool:
+    """Whether a newest-first page ends before `instant`. An unreadable `updated_at` answers
+    `False`, which keeps paging: reading one page too many is cheap, stopping early is not."""
+    if instant is None or not batch:
+        return False
+    updated = batch[-1].get("updated_at")
+    if not isinstance(updated, str):
+        return False
+    try:
+        return parse_timestamp(updated) < instant
+    except ValueError:
+        return False
+
+
 def is_merge(event: ChangeEvent) -> bool:
     """Whether a GitHub event shipped through a pull request. See `PUSH_REF_PREFIX`."""
     return not event.raw_ref.startswith(PUSH_REF_PREFIX)
@@ -224,7 +277,8 @@ def ci_status_from(result: CollectorResult, radius: BlastRadius) -> CIStatus:
 
     A failed GitHub collector is reported as zero merges *and* leaves `Brief.degraded`
     true upstream — otherwise an auth error would silently render as the strongest claim
-    the product makes.
+    the product makes. A listing cut off at `MAX_PAGES` counts what it read, and is not
+    `ok` either, for the same reason.
     """
     merges = [event for event in result.events if is_merge(event)]
     return CIStatus(merge_count=len(merges), repos_checked=_repos_in(radius))

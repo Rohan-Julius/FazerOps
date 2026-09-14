@@ -146,6 +146,11 @@ class Automation:
                 failed,
                 state.node_errors,
             )
+        elif state is not None and state.node_errors:
+            # A rejected narrative or proposal no longer marks the brief degraded — every source
+            # answered (`graph.ANNOTATION_NODES`) — but it still cost the brief its explanation or
+            # its action, and this line is the only place that says why.
+            logger.warning("brief %s: node errors %s", brief.incident_id, state.node_errors)
         response = Response(
             brief=brief,
             proposal=getattr(state, "proposal", None),
@@ -153,6 +158,13 @@ class Automation:
         )
         try:
             self.ledger.extend(candidate.event for candidate in brief.candidates)
+            # The firing itself, beside the changes it was investigated over. Catalog growth
+            # corroborates a signal's incident against this record (`generate.corroborate`): the
+            # signal store is a plain file, and an incident only this process's memory knew of
+            # would be one a forged line could name as easily. Idempotent per firing — a
+            # re-delivered webhook is the same `alert.id` and `fired_at`, including after a
+            # restart — so a re-delivery appends nothing to the alerts' chain.
+            self.ledger.record_alert(brief.alert)
         except LedgerIntegrityError as exc:
             # The brief is Tier 0 and still posts. A ledger that cannot be appended to honestly
             # (signed, and this process lacks the key) is refused loudly, not silently unsigned.

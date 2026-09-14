@@ -41,6 +41,11 @@ from .base import BaseCollector
 logger = logging.getLogger(__name__)
 
 REGION = "us-east-1"
+
+# A bound on one `lookup_events` read, so a noisy account cannot hold the brief. It is not a
+# silent one: `lookup_events` answers newest first, so what the bound drops is the *oldest* part
+# of the window — where a change that took hours to bite sits. Hitting it marks the result
+# incomplete, and the brief degraded, rather than rendering the unread stretch as no change.
 MAX_EVENTS = 200
 
 # AWS documents CloudTrail delivery as averaging about five minutes and explicitly not
@@ -132,7 +137,7 @@ class CloudTrailCollector(BaseCollector):
         """
         require_offline_capable("CloudTrailCollector")
 
-        def call() -> list[dict[str, Any]]:
+        def call() -> tuple[list[dict[str, Any]], bool]:
             import boto3  # imported here so fixture mode never constructs a client
 
             client = boto3.client("cloudtrail", region_name=REGION)
@@ -153,9 +158,19 @@ class CloudTrailCollector(BaseCollector):
                     if isinstance(when, datetime):
                         event["EventTime"] = when.isoformat()
                     events.append(event)
-            return events
+            # botocore sets `resume_token` when `MaxItems` stopped the paginator with events still
+            # unread, and leaves it `None` when the window was read to its end.
+            return events, pages.resume_token is not None
 
-        return await asyncio.to_thread(call)
+        events, truncated = await asyncio.to_thread(call)
+        if truncated:
+            # Newest first, so the last event read is the oldest one seen.
+            oldest = events[-1].get("EventTime") if events else window.end.isoformat()
+            self._incomplete = (
+                f"truncated: lookup_events stopped at {MAX_EVENTS} write events; "
+                f"changes before {oldest} were not read"
+            )
+        return events
 
     def _normalize(self, raw: dict[str, Any]) -> ChangeEvent | None:
         detail = _detail(raw)
@@ -175,7 +190,7 @@ class CloudTrailCollector(BaseCollector):
         if resource is None:
             return None
 
-        actor = _actor_from(detail.get("userIdentity") or {})
+        actor = _actor_from(detail.get("userIdentity") or {}, detail.get("sourceIPAddress"))
 
         return ChangeEvent(
             id=f"ct-{event_id}",
@@ -248,7 +263,7 @@ def _detail(raw: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
 
-def _actor_from(identity: dict[str, Any]) -> Actor:
+def _actor_from(identity: dict[str, Any], source_ip: str | None = None) -> Actor:
     """Handoff §5: handle `IAMUser`, `AssumedRole` and `Root` explicitly; **log and pass
     through anything else rather than crashing.**
 
@@ -282,7 +297,10 @@ def _actor_from(identity: dict[str, Any]) -> Actor:
 
     actor = normalize_actor(raw_principal, "cloudtrail")
 
-    source_ip = identity.get("sourceIPAddress")
+    # `sourceIPAddress` is a field of the event record, beside `userIdentity` rather than inside
+    # it — every event in the recorded fixture carries it there and none carries it here. The
+    # identity is still consulted, as a fallback for a caller that has only the identity block.
+    source_ip = source_ip or identity.get("sourceIPAddress")
     if source_ip and not actor.source_ip:
         actor = actor.model_copy(update={"source_ip": source_ip})
     return actor

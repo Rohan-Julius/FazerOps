@@ -311,13 +311,52 @@ def build_app(
                 return JSONResponse({"incident_id": key, "deduplicated": True, "in_progress": True}, status_code=202)
             return JSONResponse({**seen.response, "posted": 0, "coverage_follow_up": False, "deduplicated": True})
 
+        # The claim is released on any failure **until everything has posted**, not only a failed
+        # investigation: a Slack rate limit on `post` used to leave it "in progress" for the whole
+        # TTL, so every re-delivery was answered 202 and no brief or card was ever posted. A retry
+        # re-registers the same cards — `ApprovalGateway` returns an identical open card as it is.
+        response: Response | None = None
+        handles: list[tuple[str, str] | None] = []
         try:
             response = await automation.respond(alert)
+            messages = messages_for(response)
+            if post is not None:
+                for blocks, text in messages:
+                    handles.append(_handle(post(blocks, text=text)))
+            # Pure reads, and computed here so the claim is finished the moment everything posted.
+            follow_up = (
+                update is not None
+                and bool(handles)
+                and handles[0] is not None
+                and any(gap.status == "open" for gap in response.brief.coverage_gaps)
+            )
+            one_shot = response.one_shot
+            body = {
+                "incident_id": response.brief.incident_id,
+                "proposal": response.proposal.action_id if response.proposal is not None else None,
+                "one_shot": None if one_shot is None else (one_shot.one_shot.action_id if one_shot.offered else one_shot.refusal.value),
+                "pending": [pending.action_id for pending in response.pending],
+                "refused": response.refused,
+                "posted": len(messages) if post is not None else 0,
+                "coverage_follow_up": follow_up,
+            }
         except BaseException:
             dedupe.abandon(key)
+            if response is not None and response.pending:
+                # Registered, but with no card anyone can click. Said out loud rather than left to
+                # sit in the gateway: the brief (if it posted) points at a card that never arrived.
+                unposted = response.pending[max(len(handles) - 1, 0) :]
+                logger.error(
+                    "%s: approval(s) %s registered but their cards were not posted; the dedupe claim is "
+                    "released so a re-delivery posts them",
+                    key,
+                    ", ".join(pending.action_id for pending in unposted),
+                )
             raise
-        messages = messages_for(response)
-        handles = [_handle(post(blocks, text=text)) for blocks, text in messages] if post is not None else []
+        # Everything has posted. A re-delivery must now be answered from this, never post a second
+        # brief — so the claim is finished before any bookkeeping that could still raise.
+        dedupe.finish(key, body)
+
         # Where the incident record goes once a decision is recorded (B3): the brief's own thread.
         threads = getattr(automation, "threads", None)
         if threads is not None and handles and handles[0] is not None:
@@ -331,12 +370,6 @@ def build_app(
 
         # The brief has already posted; this only follows it. Without a way to edit it in place
         # there is nothing to follow into.
-        follow_up = (
-            update is not None
-            and bool(handles)
-            and handles[0] is not None
-            and any(gap.status == "open" for gap in response.brief.coverage_gaps)
-        )
         if follow_up:
             task = asyncio.create_task(_follow_coverage(automation, response, handles, update, sleep))
             app.state.follow_ups.add(task)
@@ -348,17 +381,6 @@ def build_app(
             app.state.follow_ups.add(task)
             task.add_done_callback(app.state.follow_ups.discard)
 
-        one_shot = response.one_shot
-        body = {
-            "incident_id": response.brief.incident_id,
-            "proposal": response.proposal.action_id if response.proposal is not None else None,
-            "one_shot": None if one_shot is None else (one_shot.one_shot.action_id if one_shot.offered else one_shot.refusal.value),
-            "pending": [pending.action_id for pending in response.pending],
-            "refused": response.refused,
-            "posted": len(messages) if post is not None else 0,
-            "coverage_follow_up": follow_up,
-        }
-        dedupe.finish(key, body)
         return JSONResponse({**body, "deduplicated": False})
 
     return app

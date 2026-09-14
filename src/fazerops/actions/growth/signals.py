@@ -33,6 +33,7 @@ model's vocabulary is exactly as narrow as it was before W40 (§4).
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 from collections.abc import Callable, Iterable, Iterator
@@ -44,6 +45,8 @@ from typing import TYPE_CHECKING, TypeVar
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from ...collectors.k8s_audit import REDACTED
+from ...ledger.chain import truncate_torn_line
+from ...ledger.normalize import FAZEROPS_CANONICAL
 from ...models import (
     BlastRadius,
     Brief,
@@ -72,6 +75,7 @@ __all__ = [
     "classify",
     "decline_signal",
     "field_path_of",
+    "find_contesting_changes",
     "find_remediations",
     "ledger_signals",
     "outcome_observer",
@@ -444,6 +448,43 @@ def find_remediations(
             break
 
 
+def find_contesting_changes(
+    ledger: LedgerStore, anchors: Iterable[GapSignal], *, window_minutes: int
+) -> Iterator[tuple[GapSignal, ChangeEvent]]:
+    """W45's negative graduation signal: anyone but automation changed the resource an
+    execution acted on, inside its quiet period. The first such change per anchor.
+
+    **Deliberately looser than `find_remediations`.** That one selects demonstrations, so it
+    needs a named human and a recorded before and after; a contest needs neither. An on-call
+    engineer missing from `identity_map.yaml` resolves as `unknown`, and a hand-fix through a
+    path that captured no prior value is still a hand-fix. Reading either as "nobody
+    intervened" would let an action graduate exactly where the evidence is thinnest, so every
+    actor not known to be automation counts. Only a service account is excluded — FazerOps's
+    own principal among them — because a controller reconciling, or the execution's own write
+    landing in the audit log, is not a human's verdict on the action.
+    """
+    span = timedelta(minutes=window_minutes)
+
+    for anchor in anchors:
+        if anchor.incident_id is None:
+            continue
+        caused = ledger.get(anchor.event_id)
+        if caused is None:
+            continue
+
+        key = caused.resource.blast_radius_key()
+        radius = BlastRadius(service=anchor.incident_id, keys={key})
+        window = TimeWindow(start=anchor.observed_at, end=anchor.observed_at + span)
+
+        for later in ledger.query(radius, window):
+            if later.id == caused.id or later.resource.blast_radius_key() != key:
+                continue
+            if later.actor.kind == "service_account" or later.actor.canonical == FAZEROPS_CANONICAL:
+                continue
+            yield anchor, later
+            break
+
+
 def remediation_signal(anchor: GapSignal, demonstration: Demonstration) -> GapSignal:
     """Keyed and attributed to the anchor's change, for the reason `GapSignal` gives."""
     return anchor.model_copy(
@@ -518,11 +559,25 @@ class GapSignalStore:
 
 
 def _append(path: Path | None, record: BaseModel) -> None:
+    """One line, under an exclusive lock, after cutting any torn final line — as `ChainedLog` does.
+
+    `_replay` tolerating a torn line is only half of it. Appending onto the unterminated line a
+    crash left fuses the new record into it, and `_replay` then drops both: a decline, rejection
+    or execution the server recorded at incident time is never observed a second time. The
+    automation server and the growth job both append here, and the lock is what makes the cut
+    safe — another writer's half-written line is never visible to it.
+    """
     if path is None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(record.model_dump_json() + "\n")
+    with path.open("a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            truncate_torn_line(handle)
+            handle.write((record.model_dump_json() + "\n").encode("utf-8"))
+            handle.flush()
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _replay(path: Path | None, model: type[_Model]) -> Iterator[_Model]:

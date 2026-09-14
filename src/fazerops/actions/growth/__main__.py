@@ -32,8 +32,8 @@ def main(argv: list[str] | None = None) -> int:
 
     mine = sub.add_parser("mine", help="collect, mine, bundle and optionally commit eligible gaps")
     mine.add_argument("--hours", type=int, default=24 * 7)
-    mine.add_argument("--since", type=datetime.fromisoformat, default=None)
-    mine.add_argument("--until", type=datetime.fromisoformat, default=None)
+    mine.add_argument("--since", type=_aware_timestamp, default=None, help="ISO 8601 with an offset, e.g. 2026-09-01T00:00:00Z")
+    mine.add_argument("--until", type=_aware_timestamp, default=None, help="ISO 8601 with an offset")
     mine.add_argument("--out", default=None, help="bundle directory (default <state-dir>/proposals)")
     mine.add_argument("--no-collect", action="store_true", help="mine only what the ledger already holds")
     mine.add_argument("--commit-to", default=None, help="a git repository to commit attested bundles into, on new branches")
@@ -57,6 +57,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "sign-ledger":
         return _sign_ledger(state_dir)
     return _lifecycle(state_dir)
+
+
+def _aware_timestamp(value: str) -> datetime:
+    """`--since` and `--until`. An offset is required here as everywhere else a timestamp enters
+    (`ledger.normalize.parse_timestamp`): assuming UTC would silently shift the mined window by
+    the operator's own offset. A value without one is a usage error, not a traceback."""
+    from ...ledger.normalize import NaiveTimestampError, parse_timestamp
+
+    try:
+        return parse_timestamp(value)
+    except NaiveTimestampError:
+        raise argparse.ArgumentTypeError(f"{value!r} has no timezone: add an offset, e.g. +00:00 or Z") from None
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not an ISO 8601 timestamp") from None
 
 
 def _sign_ledger(state_dir: Path) -> int:
@@ -120,7 +134,7 @@ async def _mine_once(mine_once, args, state_dir, since, until, key):  # type: ig
 def _lifecycle(state_dir: Path) -> int:
     from ...ledger.store import LedgerStore
     from ..catalog import default_catalog
-    from .lifecycle import graduation_status, retirement_candidates
+    from .lifecycle import graduation_status, record_first_seen, retirement_candidates
     from .signals import GapSignalStore
 
     ledger = LedgerStore(state_dir / "ledger.jsonl")
@@ -136,7 +150,10 @@ def _lifecycle(state_dir: Path) -> int:
         print("no provisional actions")
 
     incidents = list(dict.fromkeys(signal.incident_id for signal in store.signals() if signal.incident_id))
-    for action_id in retirement_candidates(catalog, store, incidents):
+    # Stamped on every report, so an action merged since the last one is not judged against
+    # incidents from before it existed.
+    available = record_first_seen(catalog, state_dir / "catalog_first_seen.json", now=now)
+    for action_id in retirement_candidates(catalog, store, incidents, available_since=available):
         print(f"{action_id}: unused across recent incidents — recommend `retired: true` (a human's edit)")
     return 0
 

@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pydantic import ValidationError
+
 from ..models import Alert
 from ..radius import default_manifest
 from .classify import classify
@@ -30,16 +32,45 @@ class UnrecognisedPayload(ValueError):
     Deliberately not a permissive fallback: guessing at an unknown shape produces an alert
     with the wrong service and a brief that confidently investigates the wrong blast
     radius, which is worse than a 400.
+
+    Also raised for a payload that matches a shape but is malformed inside it — a missing
+    `startsAt`, a `labels` that is not a map. Every caller maps this one exception to a
+    client error, and a sender that gets a 5xx instead retries a payload that can never
+    succeed (Alertmanager does).
     """
 
 
-def normalize_alert(payload: dict[str, Any]) -> Alert:
-    if "alerts" in payload and isinstance(payload.get("alerts"), list):
-        return _from_alertmanager(payload)
-    if "AlarmName" in payload:
-        return _from_cloudwatch(payload)
-    if isinstance(payload.get("event"), dict) and "data" in payload["event"]:
-        return _from_pagerduty(payload)
+class NothingFiring(UnrecognisedPayload):
+    """An Alertmanager notification whose alerts have all resolved.
+
+    Nothing is wrong any more, so there is nothing to investigate. A subclass rather than a
+    new exception, so every caller's existing `except UnrecognisedPayload` already refuses it;
+    a caller that wants to acknowledge resolutions quietly can catch this first.
+    """
+
+
+def normalize_alert(payload: Any) -> Alert:
+    # A JSON body can be any JSON value; only an object can be one of the three shapes.
+    if not isinstance(payload, dict):
+        raise UnrecognisedPayload("payload is not a JSON object")
+    try:
+        if "alerts" in payload and isinstance(payload.get("alerts"), list):
+            return _from_alertmanager(payload)
+        if "AlarmName" in payload:
+            return _from_cloudwatch(payload)
+        if isinstance(payload.get("event"), dict) and "data" in payload["event"]:
+            return _from_pagerduty(payload)
+    except ValidationError as exc:
+        # Field locations only. The values are the sender's untrusted input, and the message
+        # goes back out in the response body and into logs.
+        fields = sorted({".".join(str(part) for part in error["loc"]) or "?" for error in exc.errors()})
+        raise UnrecognisedPayload(
+            f"payload is missing or has malformed fields: {', '.join(fields)}"
+        ) from exc
+    except (AttributeError, TypeError) as exc:
+        # A field of the wrong JSON type — `labels` as a list, a timestamp as a number — fails
+        # as the first `.get` or `.strip` on it. The shape was recognised; its contents were not.
+        raise UnrecognisedPayload("payload has a field of the wrong type for its shape") from exc
     raise UnrecognisedPayload(
         "payload matched none of: Alertmanager (alerts[]), CloudWatch (AlarmName), "
         "PagerDuty (event.data)"
@@ -51,7 +82,16 @@ def _from_alertmanager(payload: dict[str, Any]) -> Alert:
     if not alerts:
         raise UnrecognisedPayload("Alertmanager payload carried no alerts")
 
-    first = alerts[0]
+    # A grouped notification carries resolved alerts beside firing ones, in no promised order,
+    # so the first *firing* alert is the one investigated. Only one is: an investigation is one
+    # alert, one radius, one brief, and one dedupe key, and fanning a group out into several is
+    # a different contract rather than a fix. An alert with no `status` is taken as firing —
+    # Alertmanager always sends one, so only a hand-built payload omits it.
+    firing = [alert for alert in alerts if isinstance(alert, dict) and alert.get("status") != "resolved"]
+    if not firing:
+        raise NothingFiring("Alertmanager payload carried no firing alerts")
+
+    first = firing[0]
     labels = first.get("labels") or {}
     annotations = first.get("annotations") or {}
     summary = annotations.get("summary") or labels.get("alertname") or "unknown alert"

@@ -495,6 +495,14 @@ def run_generated_writer(
     `pin` — `(namespace, name)` — additionally refuses a call aimed anywhere else. That is the
     execution-time guard a one-shot runs under (W44). W43's sandbox passes none, because there the
     point is to observe what the writer does, not to stop it.
+
+    **Pinned, the write itself is fixed too, not only its target.** A writer can tell the probe's
+    namespace and a sandbox's from production using nothing the allowlist refuses — a comparison
+    on `params["namespace"]` — so being honest in both says nothing about what it does here. So a
+    pinned run lets through exactly the call the probe demanded: one patch whose body is
+    `{body_field: values}`, the values the human-written dry run showed the approver. A different
+    body, a second patch, or no patch at all fails the run. What is left to a generated writer
+    at execution is whether to raise, and a raise is a failed action, never a quiet one.
     """
     import select
     import time
@@ -508,6 +516,10 @@ def run_generated_writer(
     contract = contract_for(kind, field)
     read_method, write_method = methods_for(kind, field)
     arguments = {read_method: {"name", "namespace"}, write_method: {"name", "namespace", "body"}}
+    # Through the same JSON the harness receives `values` in, so a value compares as the writer
+    # was handed it rather than as this process holds it.
+    pinned_body = json.loads(json.dumps({contract.body_field: dict(values)}, default=str))
+    patches = 0
     spec = {
         "read_source": read_source,
         "write_source": write_source,
@@ -548,6 +560,8 @@ def run_generated_writer(
 
             message = json.loads(line)
             if "done" in message:
+                if pin is not None and patches != 1:
+                    raise GeneratedWriterFailed(f"the writer patched the declared resource {patches} times, not once")
                 return message["done"] if isinstance(message["done"], dict) else {"result": message["done"]}
 
             method, kwargs = message.get("call"), message.get("kwargs") or {}
@@ -557,6 +571,16 @@ def run_generated_writer(
             if pin is not None and (kwargs.get("namespace"), kwargs.get("name")) != pin:
                 send({"error": "refused: the call is aimed outside the declared resource"})
                 continue
+            if pin is not None and method == write_method:
+                # Refused rather than corrected: a writer that builds any other body is not the
+                # writer the probe and the sandbox saw, and running it at all would be trusting it.
+                if kwargs.get("body") != pinned_body:
+                    send({"error": "refused: the patch body is not exactly the values given"})
+                    continue
+                if patches:
+                    send({"error": "refused: the declared resource was already patched"})
+                    continue
+                patches += 1
             try:
                 returned = getattr(client, method)(**kwargs)
             except Exception as exc:  # the API's answer, relayed; the writer decides what to do with it

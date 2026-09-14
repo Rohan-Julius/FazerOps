@@ -28,7 +28,8 @@ proposer's enum — the writer matching in `request_for_event`, and the approval
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+import json
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -37,7 +38,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from .miner import DEFAULT_CONFIG
-from .signals import GapSignal, GapSignalStore, SignalKind, find_remediations
+from .signals import GapSignal, GapSignalStore, SignalKind, find_contesting_changes
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ...ledger.store import LedgerStore
@@ -49,6 +50,7 @@ __all__ = [
     "graduation_progress",
     "graduation_status",
     "load_lifecycle",
+    "record_first_seen",
     "retirement_candidates",
 ]
 
@@ -106,8 +108,11 @@ def graduation_status(
 
     confirmed = contested = awaiting = 0
     for anchors in executions.values():
+        # Not `find_remediations`: that selects demonstrations, and its filters (a named human,
+        # a recorded prior value) would read an unmapped on-call's hand-fix as no fix at all —
+        # this check failing open. `find_contesting_changes` counts anyone but automation.
         remediated = next(
-            find_remediations(ledger, anchors, window_minutes=config.quiet_minutes), None
+            find_contesting_changes(ledger, anchors, window_minutes=config.quiet_minutes), None
         )
         if remediated is not None:
             # Checked before the quiet period: a human fixing it by hand ten minutes in is
@@ -143,33 +148,78 @@ def graduation_progress(
     return progress
 
 
+def record_first_seen(catalog: Catalog, path: Path | str, *, now: datetime) -> dict[str, datetime]:
+    """When each writer-backed action was first seen in the catalog. Persisted; first write wins.
+
+    What `retirement_candidates` measures "unused" from. The catalog carries no merge time, and a
+    merge commit is not something a deployed job can be relied on to read. First seen is later
+    than merged whenever this did not run on the day of the merge, which only ever delays a
+    retirement recommendation — it can never bring one forward.
+    """
+    path = Path(path)
+    seen: dict[str, datetime] = {}
+    if path.exists():
+        raw = json.loads(path.read_text(encoding="utf-8")) or {}
+        seen = {action_id: datetime.fromisoformat(stamp) for action_id, stamp in raw.items()}
+
+    new = [action.id for action in catalog if action.writer is not None and action.id not in seen]
+    if new:
+        seen.update(dict.fromkeys(new, now))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        staging = path.with_name(f".{path.name}.tmp")
+        staging.write_text(
+            json.dumps({action_id: stamp.isoformat() for action_id, stamp in sorted(seen.items())}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        staging.replace(path)
+    return seen
+
+
 def retirement_candidates(
     catalog: Catalog,
     store: GapSignalStore,
     recent_incidents: Sequence[str],
     *,
+    available_since: Mapping[str, datetime],
     config: LifecycleConfig | None = None,
 ) -> list[str]:
-    """Writer-backed actions nobody used across the last N incidents, oldest-first input.
+    """Writer-backed actions nobody used across the last N incidents they could have been used
+    in, oldest-first input.
 
     Only writer-backed actions are ever recommended. Sprawl is the failure mode of a catalog
     that grows (§7.6); Handoff §7's hand-written actions are the catalog it grew from.
     Fewer than N incidents recommends nothing — an action cannot be shown unused over a history
     too short to have needed it.
+
+    **Only incidents after the action became available count** (`available_since`, from
+    `record_first_seen`). An action merged today was not unused across last month's incidents;
+    it did not exist for them. An action with no recorded availability has no incident that
+    provably postdates it, so it is not recommended. An incident is placed at its earliest
+    signal, and one with no signal in the store cannot be placed and does not count.
     """
     config = config if config is not None else load_lifecycle()
-    window = list(dict.fromkeys(recent_incidents))[-config.retire_after_unused_incidents :]
-    if len(window) < config.retire_after_unused_incidents:
-        return []
+    needed = config.retire_after_unused_incidents
 
-    incidents = set(window)
-    used = {
-        signal.action_id
-        for signal in store.signals()
-        if signal.kind in (SignalKind.EXECUTED, SignalKind.REJECTED) and signal.incident_id in incidents
-    }
-    return sorted(
-        action.id
-        for action in catalog
-        if action.writer is not None and not action.retired and action.id not in used
-    )
+    began: dict[str, datetime] = {}
+    used: dict[str, set[str]] = {}
+    for signal in store.signals():  # oldest first, so the first seen per incident is its start
+        if signal.incident_id is None:
+            continue
+        began.setdefault(signal.incident_id, signal.observed_at)
+        if signal.kind in (SignalKind.EXECUTED, SignalKind.REJECTED) and signal.action_id is not None:
+            used.setdefault(signal.action_id, set()).add(signal.incident_id)
+
+    incidents = [incident for incident in dict.fromkeys(recent_incidents) if incident in began]
+    candidates = []
+    for action in catalog:
+        if action.writer is None or action.retired:
+            continue
+        since = available_since.get(action.id)
+        if since is None:
+            continue
+        window = [incident for incident in incidents if began[incident] >= since][-needed:]
+        if len(window) < needed:
+            continue
+        if used.get(action.id, set()).isdisjoint(window):
+            candidates.append(action.id)
+    return sorted(candidates)

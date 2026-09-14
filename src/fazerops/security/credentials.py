@@ -410,7 +410,10 @@ def _assume(
         # The session name is the audit trail on the AWS side: CloudTrail records it on
         # every call the session makes, so an operator reading CloudTrail sees which
         # incident and which approved action produced the mutation.
-        RoleSessionName=f"fazerops-{incident_id}-{action_id}"[:64],
+        # Sanitized like `SourceIdentity`: the incident id embeds the alert source's own id, and a
+        # CloudWatch `AlarmName` may hold spaces, which STS rejects server-side — every approval
+        # for that alarm would fail. The `fazerops-` prefix keeps it above STS's 2-character floor.
+        RoleSessionName=_sts_safe(f"fazerops-{incident_id}-{action_id}")[:64],
         Policy=json.dumps(session_policy(namespace, action_id)),
         DurationSeconds=SESSION_TTL_SECONDS,
         # Names and types validated offline against botocore's STS model (`test_actor_attribution`).
@@ -440,9 +443,11 @@ def kubernetes_identity(credential: ActorCredential) -> tuple[str, list[str]]:
 
 
 def _sts_safe(value: str) -> str:
+    """STS's `[\\w+=,.@-]`, where `\\w` is ASCII: Python's is Unicode by default, and would pass
+    an `é` that STS then refuses."""
     import re
 
-    return re.sub(r"[^\w+=,.@-]", "-", value)
+    return re.sub(r"[^\w+=,.@-]", "-", value, flags=re.ASCII)
 
 
 def _k8s_safe(value: str) -> str:

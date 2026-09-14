@@ -383,14 +383,21 @@ async def propose(
             usage["out"],
             estimated=usage.get("estimated", False),
         )
+    if response is None:
+        # After the meter, as in the correlator: a response truncated at `max_output_tokens`
+        # was billed for every token of it, and a rejection raised first kept it off the ledger.
+        raise ProposalRejected("the model returned no structured output")
     if mode is LlmMode.RECORD:
         cassette.record(key, response, model=model)
 
     return validate_proposal(response, brief, narrative, catalog=catalog)
 
 
-async def _invoke(provider, model: str, messages: list[dict]) -> tuple[dict, dict]:
+async def _invoke(provider, model: str, messages: list[dict]) -> tuple[dict | None, dict]:
     """One live call, through Strands' `Model` interface whichever provider is active.
+
+    A `None` response is a truncation, returned with the usage it was billed for so `propose`
+    meters it before rejecting it.
 
     Same two-branch construction as W18's correlator and for the same reason: both
     providers implement Strands' `Model`, so only the constructor differs (plan §9.2).
@@ -417,7 +424,7 @@ async def _invoke(provider, model: str, messages: list[dict]) -> tuple[dict, dic
             output = event["output"]
 
     if output is None:
-        raise ProposalRejected("the model returned no structured output")
+        return None, usage or _estimated_usage(messages, None)
 
     return output.to_proposal_dict(), usage or _estimated_usage(messages, output)
 
@@ -467,13 +474,15 @@ def proposer_node(state: Any, *, signals: Any | None = None, one_shots: Any | No
     proposal and nothing else — the ranked, cited change list is the product, and taking
     the whole graph down over a bad remediation would throw that away to punish the model.
     """
-    from .graph import FunctionNode, _brief_from
+    from .graph import PROPOSER_TIMEOUT_SECONDS, FunctionNode, _brief_from
 
     async def run() -> str:
         brief = _brief_from(state, narrative=state.narrative)
         try:
             state.proposal = await propose(brief, state.narrative, meter=getattr(state, "meter", None))
         except ProposalRejected as exc:
+            # Kept in `node_errors`, so a caller can say why there is no proposal. It does not mark
+            # the brief degraded: `InvestigationState.degraded` ignores `ANNOTATION_NODES`.
             state.node_errors["proposer"] = str(exc)
             return "proposal rejected"
         if state.proposal is not None:
@@ -513,4 +522,7 @@ def proposer_node(state: Any, *, signals: Any | None = None, one_shots: Any | No
             return "no action proposed"
         return f"proposed {state.proposal.action_id}"
 
-    return FunctionNode("proposer", run, state)
+    # Bounded inside the node for the orchestrator's reason (`graph.GRAPH_TIMEOUT_MULTIPLE`): a slow
+    # `propose`, or a slow `one_shots.offer` after a decline, would otherwise reach the graph's
+    # backstop, which fails the whole graph and loses a brief that was already complete.
+    return FunctionNode("proposer", run, state, timeout=PROPOSER_TIMEOUT_SECONDS)

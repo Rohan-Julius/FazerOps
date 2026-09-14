@@ -419,6 +419,24 @@ def _evidence_violations(repo: Path, sha: str, files: set[str], key: bytes | Non
     if stated != cited:
         return flag(Rule.EVIDENCE_UNVERIFIED, "the commit cites different events from its attestation")
 
+    # The signature says which candidate and which action the evidence was resolved for, and a
+    # valid signature over *some* catalog change proves nothing about this one. Attestations sit
+    # in the repository, so without this any of them — copied under a new name, its Cites line
+    # repeated — would pass for an entry nobody attested. So the file is the one `commit_bundle`
+    # names for its candidate, and the entry the commit adds or changes is its action, alone.
+    if attested[0] != f"{EVIDENCE_DIR}{record.get('candidate_id')}.json":
+        return flag(Rule.EVIDENCE_UNVERIFIED, f"{attested[0]} is not where the attestation for {record.get('candidate_id')} goes")
+    try:
+        before, after = _declared(repo, f"{sha}^"), _declared(repo, sha)
+    except (yaml.YAMLError, TypeError, AttributeError, KeyError):
+        return flag(Rule.EVIDENCE_UNVERIFIED, "the catalog does not parse, so the attested entry cannot be found in it")
+    changed = {action_id for action_id in set(before) | set(after) if before.get(action_id) != after.get(action_id)}
+    if changed != {record.get("action_id")}:
+        return flag(
+            Rule.EVIDENCE_UNVERIFIED,
+            f"the attestation is for {record.get('action_id')}, and the commit changes {', '.join(sorted(changed)) or 'no catalog entry'}",
+        )
+
     containment = record.get("containment") or {}
     for module in sorted(path for path in files if path.startswith(GENERATED_DIR) and path.endswith(".py")):
         source = _show(repo, sha, module)

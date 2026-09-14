@@ -43,7 +43,19 @@ TAG = "untrusted_data"
 # Every literal occurrence of the tag name inside content, in either an opening or a
 # closing position, whatever casing or internal whitespace — `< / UnTrusted_Data >` closes
 # the block in a model's reading of it just as reliably as the canonical spelling does.
-_TAG_SENTINEL = re.compile(rf"<\s*/?\s*{TAG}\b[^>]*>", re.IGNORECASE)
+#
+# **The terminating `>` is optional, and the tail may not cross a `<`.** A tag with no `>` —
+# `</untrusted_data` then a newline — still reads as a close to a model, and a pattern that
+# demanded the `>` both left it unescaped and, because `[^>]*` spans newlines, matched from it
+# all the way to the envelope's own closing `>`: two sentinels counted, the breakout passed.
+# The tail is consumed only when it ends the tag (on its line, or with whitespace alone before
+# the `>`), so an unterminated one loses just its prefix and the prose after it survives.
+_TAG_SENTINEL = re.compile(rf"<\s*/?\s*{TAG}\b(?:[^<>\n]*>|\s*>)?", re.IGNORECASE)
+
+# The post-condition counts this, the bare prefix, rather than `_TAG_SENTINEL`: whatever follows
+# the tag name, a surviving prefix is a surviving tag, so the count cannot be satisfied by one
+# match swallowing another.
+_TAG_PREFIX = re.compile(rf"<\s*/?\s*{TAG}\b", re.IGNORECASE)
 
 # What the escaped form becomes. Deliberately not an entity like `&lt;`: the model reads
 # this text, not an HTML parser, and a visibly-neutralized marker is also the audit trail —
@@ -86,7 +98,9 @@ def wrap_untrusted(content: str, *, source: str, event_id: str | None = None) ->
     body = _escape(content)
     block = f"<{TAG} {attributes}>\n{body}\n</{TAG}>"
 
-    if len(_TAG_SENTINEL.findall(block)) != 2:
+    # Two prefixes in the block, and none in the body: the count alone would accept a body that
+    # carried one tag while an attribute lost the other.
+    if _TAG_PREFIX.search(body) or len(_TAG_PREFIX.findall(block)) != 2:
         raise EnvelopeBreakout(f"content from {source!r} survived escaping")
     return block
 

@@ -203,17 +203,52 @@ def request_for_proposal(proposal: Any, candidates: Any, *, catalog: Catalog | N
     The hint is taken from the cited event, never from the proposal: it holds the prior and
     current values the inverse and the dry run are computed from. Raises `ValidationRejected`
     for params the catalog does not accept.
+
+    A cited hint is attached only if it was recorded on **the resource the params name**. The
+    single-key forms read `current_value` straight off the hint, so a proposal that cited one
+    ConfigMap's change while naming another would render the first one's value as the second's
+    "before" and record it as the inverse — a wrong dry run that reads as an honest one.
     """
     events = {candidate.event.id: candidate.event for candidate in candidates}
+    params = dict(proposal.params)
     hint = next(
         (
             events[event_id].inverse_hint
             for event_id in proposal.evidence_ids
-            if event_id in events and (events[event_id].inverse_hint or {}).get("action_id") == proposal.action_id
+            if event_id in events and _hint_fits(proposal.action_id, params, events[event_id].inverse_hint)
         ),
         None,
     )
-    return ActionRequest.for_action(proposal.action_id, dict(proposal.params), inverse_hint=hint, catalog=catalog)
+    return ActionRequest.for_action(proposal.action_id, params, inverse_hint=hint, catalog=catalog)
+
+
+# The fields a built-in hint names its resource by. A writer-backed hint is absent on purpose: it
+# names its resource on `ref`, which `writers.registry.recorded_values` already compares to the params.
+_HINT_RESOURCE_FIELDS = {
+    "revert_configmap_key": ("namespace", "name"),
+    "helm_rollback": ("namespace", "release"),
+    "restore_db_parameter": ("parameter_group", "parameter"),
+}
+
+
+def _hint_fits(action_id: str, params: dict[str, Any], hint: dict[str, Any] | None) -> bool:
+    """Whether `hint` was recorded for this action on the resource `params` name.
+
+    The multi-key form is checked here only down to the ConfigMap; `recorded_keys` then requires
+    the exact key set. A one-key request must name the hint's own `key` — a multi-key hint has
+    none, so a one-key revert of a several-key change gets no hint, as it got no inverse before.
+    """
+    hint = hint or {}
+    if hint.get("action_id") != action_id:
+        return False
+    fields = _HINT_RESOURCE_FIELDS.get(action_id)
+    if fields is None:
+        return True
+    if any(hint.get(field) is None or str(hint[field]) != str(params.get(field)) for field in fields):
+        return False
+    if action_id == "revert_configmap_key" and params.get("key") is not None:
+        return hint.get("key") is not None and str(hint["key"]) == str(params["key"])
+    return True
 
 
 def inverse(request: ActionRequest, *, catalog: Catalog | None = None) -> ActionRequest | None:

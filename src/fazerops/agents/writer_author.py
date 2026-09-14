@@ -126,12 +126,17 @@ async def author_writer(
     response, usage = await _invoke(provider_for(mode), model, messages)
     if meter is not None:
         meter.record("writer_author", model, usage["in"], usage["out"], estimated=usage.get("estimated", False))
+    if response is None:
+        # After the meter, as in the correlator: a truncated response was still billed.
+        raise WriterAuthoringFailed("the model returned no structured output")
     if mode is LlmMode.RECORD:
         cassette.record(key, response, model=model)
     return AuthoredWriter(**_parse(response), model=model)
 
 
-async def _invoke(provider, model: str, messages: list[dict]) -> tuple[dict, dict]:
+async def _invoke(provider, model: str, messages: list[dict]) -> tuple[dict | None, dict]:
+    """One live call. A `None` response is a truncation, returned with its usage so the
+    caller meters it before rejecting it — see the correlator's `_invoke`."""
     from ..config import require_offline_capable
     from .correlator import _bedrock_model, _estimated_usage, _gemini_model, _usage_from
     from .llm import Provider
@@ -148,5 +153,5 @@ async def _invoke(provider, model: str, messages: list[dict]) -> tuple[dict, dic
             output = event["output"]
 
     if output is None:
-        raise WriterAuthoringFailed("the model returned no structured output")
+        return None, usage or _estimated_usage(messages, None)
     return output.model_dump(), usage or _estimated_usage(messages, output)

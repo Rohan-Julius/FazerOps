@@ -222,12 +222,15 @@ async def run_cycle(
         except AlreadyCommitted as exc:
             branch, sha, status = exc.branch, None, CycleStatus.ALREADY_COMMITTED
 
-        if sha is not None:
-            violations = check_agent_commits(repo, start_from, branch, evidence_key=evidence_key)
-            if violations:
-                detail = "; ".join(f"{v.rule.value}: {v.detail}" for v in violations)[:500]
-                outcomes.append(CycleOutcome(status=CycleStatus.COMMIT_REJECTED, branch=branch, commit=sha, detail=detail, **bundled))
-                continue
+        # A branch from an earlier cycle is checked again, not trusted for existing: a rejected
+        # branch stays where it was left, and pushing it next cycle because it is no longer new
+        # would open the very PR the check refused. It may also have moved since, or the key
+        # that signed its evidence may have been rotated.
+        violations = check_agent_commits(repo, start_from, branch, evidence_key=evidence_key)
+        if violations:
+            detail = "; ".join(f"{v.rule.value}: {v.detail}" for v in violations)[:500]
+            outcomes.append(CycleOutcome(status=CycleStatus.COMMIT_REJECTED, branch=branch, commit=sha, detail=detail, **bundled))
+            continue
 
         if open_prs:
             try:

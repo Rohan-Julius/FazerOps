@@ -35,6 +35,7 @@ import json
 from collections.abc import Mapping
 from contextlib import nullcontext
 from dataclasses import dataclass, field
+from datetime import timedelta
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -44,7 +45,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ...models import NormalizedAction
 from .miner import Gap, GapAggregate, IneligibleReason, MinerThresholds, mine
-from .signals import FieldPath, GapKey, GapSignalStore, ResourceKind, SignalKind
+from .signals import FieldPath, GapKey, GapSignal, GapSignalStore, ResourceKind, SignalKind
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ...ledger.store import LedgerStore
@@ -450,7 +451,8 @@ class Corroboration(BaseModel):
     carries. Neither is evidence on its own: a forged line in the store, or a `Gap` built with
     inflated counts, would clear the thresholds without a single change behind it. So replay
     counts again, keeping only signals whose change the ledger holds with the same structure and
-    actor, and the thresholds must still clear.
+    actor, and whose incident is a firing the ledger recorded (`_incident_holds`), and the
+    thresholds must still clear.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -499,12 +501,23 @@ class CorpusDisagreement(RuntimeError):
         self.report = report
 
 
+# The furthest back an investigation looks before its alert fired: the orchestrator's
+# `compute_window` offers 1..24 hours (`WINDOW_HOURS`) and `pipeline.window_for` clamps to the same.
+# An older change was in no brief for that firing, so no signal about that firing can be about it.
+WIDEST_WINDOW = timedelta(hours=24)
+
+
 def corroborate(
     key: GapKey, store: GapSignalStore, ledger: LedgerStore, thresholds: MinerThresholds | None = None
 ) -> Corroboration:
+    from ...models import incident_id_for
     from .miner import aggregate
-    from .signals import signal_for
+    from .signals import ANCHOR_KINDS, signal_for
 
+    # Every firing the ledger recorded, under the id its investigation was given. The alert history
+    # is chained and signed like the changes, and `Automation.respond` records each brief's alert in
+    # it. Read whole: `LedgerStore` offers alerts only as precedents of another alert.
+    firings = {incident_id_for(alert): alert for alert in ledger._alerts.values()}
     signals = [signal for signal in store.signals() if signal.key == key]
     vouched = []
     for signal in signals:
@@ -518,8 +531,17 @@ def corroborate(
             incident_id=signal.incident_id,
             action_id=signal.action_id,
         )
-        if recomputed == signal:
+        if recomputed == signal and _incident_holds(signal, event, firings):
             vouched.append(signal)
+
+    # A remediation is recorded against the anchor it followed (`remediation_signal`), under that
+    # anchor's incident and change, so it is evidence only while the anchor is. Otherwise a forged
+    # decline over a real firing would be dropped here and still lend that firing to the human fix
+    # after it — which counts towards the incident threshold just the same.
+    anchored = {(s.incident_id, s.event_id) for s in vouched if s.kind in ANCHOR_KINDS}
+    vouched = [
+        s for s in vouched if s.kind is not SignalKind.HUMAN_REMEDIATION or (s.incident_id, s.event_id) in anchored
+    ]
 
     rows = [row for row in aggregate(vouched) if row.key == key]
     if not rows:
@@ -533,6 +555,46 @@ def corroborate(
         eligible=gap.eligible,
         reasons=gap.reasons,
     )
+
+
+def _incident_holds(signal: GapSignal, event: Any, firings: Mapping[str, Any]) -> bool:
+    """The signal's incident is a firing the ledger recorded, and the signal fits that firing.
+
+    `signal_for` recomputes everything a signal says about its *change* from the ledger. Which
+    incident it belongs to, and when it was observed, is only what the store's line says — and the
+    incident threshold is counted on exactly that. So it is checked against the one signed record
+    of incidents there is, the ledger's alert history:
+
+    * the incident id is `incident_id_for` of a recorded alert, so an incident nobody was paged
+      for cannot be named;
+    * the change falls inside the widest window an investigation of that firing looked over, so a
+      real firing cannot be attached to a change of the right shape from another week;
+    * a decline carries the firing's own time (`decline_signal`), and a rejection, an execution or
+      a remediation comes after the firing.
+
+    **Not checked, because the ledger does not hold it:** a rejection's or execution's `action_id`,
+    and its `observed_at` beyond "after the firing". Both come from the gateway's decision, which
+    `decisions.jsonl` records and this ledger does not. So a forged line can still turn a real
+    firing whose window held a real change of this class into a decline or rejection nobody made;
+    it can no longer invent the firing, or move a change into one.
+    """
+    if signal.incident_id is None:
+        # History alone (`ledger_signals`): the miner counts it towards neither threshold.
+        return True
+    alert = firings.get(signal.incident_id)
+    if alert is None:
+        return False
+    fired = alert.fired_at
+    # Half-open, as every window the collectors and the ledger read is.
+    if not fired - WIDEST_WINDOW <= event.occurred_at < fired:
+        return False
+    if signal.kind is SignalKind.DECLINE:
+        return signal.observed_at == fired and signal.action_id is None
+    if signal.kind is SignalKind.HUMAN_REMEDIATION:
+        return signal.observed_at >= fired and signal.action_id is None
+    if signal.kind in (SignalKind.REJECTED, SignalKind.EXECUTED):
+        return signal.observed_at >= fired
+    return False  # `ledger_signals`' kinds carry no incident; one that does was not written by us
 
 
 def _demonstration_holds(demonstration: Any, anchor: Any, ledger: LedgerStore) -> bool:

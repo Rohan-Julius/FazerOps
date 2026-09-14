@@ -148,8 +148,13 @@ class K8sAuditCollector(BaseCollector):
 
                 key = _object_key(entry)
                 stored = entry.get("responseObject")
+                # A body with no maps still replaces an anchor that had them: the API server omits
+                # an emptied `data`, so that entry is the object's latest state, and keeping the
+                # older one would seed a prior value the object no longer held.
                 if key and self._is_recordable(entry) and (
-                    _object_data(stored) or _object_map(stored, "binaryData")
+                    _object_data(stored)
+                    or _object_map(stored, "binaryData")
+                    or (key in anchors and isinstance(stored, dict))
                 ):
                     anchors[key] = entry
 
@@ -175,12 +180,23 @@ class K8sAuditCollector(BaseCollector):
                 item["_prior_data"] = seen_state[key]
             if key in seen_binary:
                 item["_prior_binary_data"] = seen_binary[key]
-            stored = _object_data(item.get("responseObject"))
+            body = item.get("responseObject")
+            # Kubernetes serializes both maps `omitempty`: an update that removes every key stores
+            # an object with no `data` at all. So a stored body without the map, for an object
+            # already seen with one, is that map emptied — not "no information". Left as it was,
+            # the next edit's `before` would be the stale map, and its revert hint would restore
+            # a value deleted on purpose. An object never seen with the map (a Deployment) stays
+            # out of the index, so its entries still carry no diff.
+            stored = _object_data(body)
             if stored is not None:
                 seen_state[key] = stored
-            binary = _object_map(item.get("responseObject"), "binaryData")
+            elif key in seen_state and isinstance(body, dict):
+                seen_state[key] = {}
+            binary = _object_map(body, "binaryData")
             if binary is not None:
                 seen_binary[key] = binary
+            elif key in seen_binary and isinstance(body, dict):
+                seen_binary[key] = {}
 
         return ordered
 

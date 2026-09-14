@@ -31,6 +31,10 @@ class CollectorResult:
     there surfaces as an opaque graph failure and takes the whole brief with it, so a
     dead source degrades the brief instead: `Brief.degraded` goes true and the message
     says which source was unavailable.
+
+    A source that answered only part of the question — a listing cut off at its page or item
+    bound — carries its events *and* an error. The events it did read are real; the error is
+    what stops the part it did not read from rendering as "nothing changed".
     """
 
     __slots__ = ("source", "events", "error", "coverage_gap")
@@ -80,10 +84,18 @@ class BaseCollector(abc.ABC):
     source says so (CloudTrail); a query at alert time cannot see the last `delivery_lag` of
     the window, and `fetch` reports that stretch as a `CoverageGap` rather than as silence."""
 
+    _incomplete: str | None = None
+    """Set by a live fetch that stopped at its bound with more still unread. Not a `CoverageGap`:
+    a gap is time the source has not delivered yet and closes by waiting, and re-asking a
+    truncated listing truncates it again. So `fetch` reports it as the result's error."""
+
     async def fetch(self, radius: BlastRadius, window: TimeWindow) -> CollectorResult:
         # Taken before the call: an event delivered while the call runs may or may not be in
         # the answer, so the earlier instant is the one the gap can be vouched for from.
         queried_at = self._now()
+        # Reset per call: `coverage.watch_coverage` re-polls the same instance, and one truncated
+        # answer must not mark every later one incomplete.
+        self._incomplete = None
         try:
             raw_items = await self._fetch_raw(radius, window)
         except Exception as exc:  # noqa: BLE001 - see CollectorResult's docstring
@@ -103,7 +115,12 @@ class BaseCollector(abc.ABC):
             events.append(event)
 
         events.sort(key=lambda e: e.occurred_at)
-        return CollectorResult(self.source, events, coverage_gap=self._coverage_gap(window, queried_at))
+        return CollectorResult(
+            self.source,
+            events,
+            error=self._incomplete,
+            coverage_gap=self._coverage_gap(window, queried_at),
+        )
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)

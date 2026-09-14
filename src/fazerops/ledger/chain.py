@@ -40,6 +40,7 @@ __all__ = [
     "LedgerIntegrityError",
     "LedgerUntrusted",
     "sign_unsigned",
+    "truncate_torn_line",
     "usable_as_evidence",
     "worst",
 ]
@@ -239,26 +240,26 @@ class ChainedLog:
 
     def _repair_and_read_tail(self, handle: Any) -> dict | None:
         """The last complete line, after truncating a torn one. Called under the lock."""
-        size = handle.seek(0, 2)
-        if size == 0:
-            return None
+        end = truncate_torn_line(handle)
 
-        handle.seek(size - 1)
-        if handle.read(1) != b"\n":
-            cut = self._last_newline_before(handle, size)
-            handle.truncate(cut)
-            size = cut
-            if size == 0:
-                return None
-
-        start = self._last_newline_before(handle, size - 1)
-        handle.seek(start)
-        raw = handle.read(size - start).strip()
-        try:
-            tail = json.loads(raw)
-        except ValueError as exc:
-            raise LedgerIntegrityError(f"{self.path}'s last complete line is not JSON: the chain cannot be continued") from exc
-        return tail if isinstance(tail, dict) else {}
+        # The last line with anything on it. `read()` skips blank lines wherever they are, so a
+        # trailing one — an editor's extra newline — is not the tail here either: taking it as
+        # the tail refused every append to a ledger that reads VERIFIED. A non-blank line that is
+        # not JSON still refuses; that is an edit, not whitespace.
+        while end > 0:
+            start = self._last_newline_before(handle, end - 1)
+            handle.seek(start)
+            raw = handle.read(end - start).strip()
+            if raw:
+                try:
+                    tail = json.loads(raw)
+                except ValueError as exc:
+                    raise LedgerIntegrityError(
+                        f"{self.path}'s last complete line is not JSON: the chain cannot be continued"
+                    ) from exc
+                return tail if isinstance(tail, dict) else {}
+            end = start
+        return None
 
     @staticmethod
     def _last_newline_before(handle: Any, end: int) -> int:
@@ -273,3 +274,21 @@ class ChainedLog:
                 return begin + index + 1
             position = begin
         return 0
+
+
+def truncate_torn_line(handle: Any) -> int:
+    """Cut a torn final line — what a crash mid-append leaves — and return the file's new size.
+
+    For any append-only JSONL file, not only a chained one: appending onto an unterminated line
+    fuses the new record into it, and both are then unparseable. Call it on a handle opened
+    `a+b` **under an exclusive lock** — without one, a line another writer is still appending
+    looks exactly like a torn one.
+    """
+    size = handle.seek(0, 2)
+    if size == 0:
+        return 0
+    handle.seek(size - 1)
+    if handle.read(1) != b"\n":
+        size = ChainedLog._last_newline_before(handle, size)
+        handle.truncate(size)
+    return size

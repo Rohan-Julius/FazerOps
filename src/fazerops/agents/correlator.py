@@ -337,14 +337,24 @@ async def correlate(
             usage["out"],
             estimated=usage.get("estimated", False),
         )
+    if response is None:
+        # Raised here, after the meter, and not inside `_invoke`. A response cut off at
+        # `max_output_tokens` is the costliest call there is — the whole cap, spent thinking —
+        # and raising before `record` left it off the ledger and out of both caps.
+        raise NarrativeRejected("the model returned no structured output")
     if mode is LlmMode.RECORD:
         cassette.record(key, response, model=model)
 
     return validate_narrative(response, brief.candidates)
 
 
-async def _invoke(provider, model: str, messages: list[dict[str, Any]]) -> tuple[dict, dict]:
+async def _invoke(
+    provider, model: str, messages: list[dict[str, Any]]
+) -> tuple[dict | None, dict]:
     """One live call, through Strands' `Model` interface whichever provider is active.
+
+    Returns `None` for the response when the model produced no structured output (a
+    truncation), with the usage it was billed for anyway — the caller meters, then rejects.
 
     Both providers go through `structured_output`, so the response is schema-constrained by
     the provider rather than coaxed out of free text and parsed hopefully. That is what
@@ -375,7 +385,7 @@ async def _invoke(provider, model: str, messages: list[dict[str, Any]]) -> tuple
             output = event["output"]
 
     if output is None:
-        raise NarrativeRejected("the model returned no structured output")
+        return None, usage or _estimated_usage(messages, None)
 
     return output.model_dump(), usage or _estimated_usage(messages, output)
 
@@ -564,15 +574,18 @@ def _usage_from(event: dict) -> dict[str, int] | None:
     return None
 
 
-def _estimated_usage(messages: list[dict[str, Any]], output: _WireOutput) -> dict[str, int]:
+def _estimated_usage(messages: list[dict[str, Any]], output: BaseModel | None) -> dict[str, int]:
     """Fallback when the provider reports no usage. Deliberately conservative (W16's
     estimator over-counts): a budget that under-reports is worse than none, because it
-    reads as a guarantee."""
+    reads as a guarantee.
+
+    `output` is `None` for a response that produced no structured output: the prompt was
+    still sent and billed, so it is still counted, and the output nobody saw is counted as 0."""
     from ..security.envelope import estimate_tokens
 
     sent = json.dumps(messages, default=str)
     return {
         "in": estimate_tokens(sent),
-        "out": estimate_tokens(output.model_dump_json()),
+        "out": estimate_tokens(output.model_dump_json()) if output is not None else 0,
         "estimated": True,
     }
