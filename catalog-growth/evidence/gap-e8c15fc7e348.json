@@ -1,0 +1,28 @@
+{
+  "candidate_id": "gap-e8c15fc7e348",
+  "action_id": "revert_configmap_key",
+  "cited": [
+    {
+      "id": "43bca684-8f5c-4274-be66-a1256be38b26",
+      "digest": "92e958d245fc7849a561536d4648cd6d1f5699afedeac16dd08317652d74b445"
+    },
+    {
+      "id": "68251d94-d8e1-4154-9326-80aea8829a24",
+      "digest": "b739dc2cbd889c7884ab12686382b23f59181f42c1077fe58287c20718575760"
+    },
+    {
+      "id": "774aec9b-3315-4267-befa-0f1e1baf8a43",
+      "digest": "6a82ff29d51d3e52f9b318154eee416f1fda26bbf43bf9b9cdc52ea379a27ef6"
+    },
+    {
+      "id": "fc5b28ce-773b-40b2-b0a7-00f9c132302d",
+      "digest": "eeb6852e0a473b8bcb9db08d9f6ad0391f437cc22750c88f1492570a90ab8a81"
+    }
+  ],
+  "containment": {
+    "required": false,
+    "why": "no code was generated"
+  },
+  "module_digest": null,
+  "mac": "d42485e9c4f0c02c5cc43c5701ed4dbbe1d3648e4be3460e6cff0571b10cae74"
+}

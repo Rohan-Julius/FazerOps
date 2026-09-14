@@ -21,8 +21,9 @@ actions:
     params:
       namespace: {type: str, required: true}
       name: {type: str, required: true}
-      key: {type: str, required: true}
-      target_value: {type: str, required: true}
+      key: {type: str, required: false}
+      target_value: {type: str, required: false}
+      keys: {type: "list[str]", required: false}
     preconditions:
       - configmap_exists
       - prior_value_known
