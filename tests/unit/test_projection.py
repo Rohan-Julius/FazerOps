@@ -142,10 +142,10 @@ def test_in_band_is_reported_to_the_model_but_was_not_scored():
 def test_an_unresolved_actor_is_labelled_as_such():
     """An unmapped actor passes through with `resolved=False` (W3). The model must be able
     to say "an unresolved principal" rather than assert an identity we did not establish."""
-    unknown = event(actor=Actor(raw="arn:aws:iam::683590131574:user/someone"))
+    unknown = event(actor=Actor(raw="arn:aws:iam::111122223333:user/someone"))
     projected = project_event_for_llm(unknown)
 
-    assert projected["actor"] == "arn:aws:iam::683590131574:user/someone"
+    assert projected["actor"] == "arn:aws:iam::111122223333:user/someone"
     assert projected["actor_resolved"] is False
 
 
