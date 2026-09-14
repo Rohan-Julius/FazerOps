@@ -45,15 +45,14 @@ def messages_for(response: Response) -> list[tuple[list[dict[str, Any]], str]]:
     note = approval_card_note(response.brief)
     messages = [_brief_message(response, response.brief)]
     for pending in response.pending:
-        messages.append((approval_card_for(pending, coverage_note=note), _card_text(pending)))
+        messages.append((approval_card_for(pending, coverage_note=note, brief=response.brief), _card_text(pending)))
     return messages
 
 
 def _brief_message(response: Response, brief: Any, automation: Any = None) -> tuple[list[dict[str, Any]], str]:
-    """The brief's blocks. When `automation` shows its proposal already decided, the Approve and
-    Reject are replaced by the outcome line — a re-render must never hand a decided action its
-    buttons back."""
-    from ..slack.blocks import change_brief, close_decision
+    """The brief's blocks. The decision is made on the approval card (plan §9.2, 14 Sep); once
+    `automation` shows it decided, the brief says what was decided in place of pointing to the card."""
+    from ..slack.blocks import change_brief
 
     catalog_card = next((p for p in response.pending if p.one_shot is None), None)
     blocks = change_brief(
@@ -61,11 +60,9 @@ def _brief_message(response: Response, brief: Any, automation: Any = None) -> tu
         proposal_summary=catalog_card.dry_run.summary if catalog_card is not None else None,
         action_id=response.proposal.action_id if response.proposal is not None else None,
         dry_run_digest=catalog_card.digest if catalog_card is not None else None,
+        decided_line=_decided_line_for(automation, catalog_card) if catalog_card is not None else None,
     )
-    line = _decided_line_for(automation, catalog_card) if catalog_card is not None else None
-    if line is not None:
-        blocks = close_decision(blocks, action_id=catalog_card.action_id, line=line) or blocks
-    return blocks, f"{brief.incident_id}: {len(brief.candidates)} change(s) in the {brief.alert.service} blast radius"
+    return blocks, f"{brief.alert.service}: {len(brief.candidates)} recent change(s) found for this alert"
 
 
 def _decided_line_for(automation: Any, pending: Any) -> str | None:
@@ -80,7 +77,7 @@ def _decided_line_for(automation: Any, pending: Any) -> str | None:
 
 
 def _card_text(pending: Any) -> str:
-    return f"Approval required: {pending.action_id} for {pending.incident_id}"
+    return f"Approval required: {pending.dry_run.summary}"
 
 
 def _handle(posted: Any) -> tuple[str, str] | None:
@@ -113,7 +110,12 @@ async def _follow_coverage(
             if _decided_line_for(automation, pending) is not None:
                 continue
             if handle is not None and note != notes[index]:
-                update(handle[0], handle[1], approval_card_for(pending, coverage_note=note), text=_card_text(pending))
+                update(
+                    handle[0],
+                    handle[1],
+                    approval_card_for(pending, coverage_note=note, brief=change.brief),
+                    text=_card_text(pending),
+                )
                 notes[index] = note
 
     try:
@@ -123,11 +125,12 @@ async def _follow_coverage(
 
 
 def decision_closer(automation: Automation, update: Update, *, background: bool = True) -> Callable[..., None]:
-    """A decided hook that closes *every* message offering the decision, not only the one clicked.
+    """A decided hook that brings *every* message about the decision up to date, not only the one clicked.
 
-    An action is offered twice: on its approval card and on the brief. The click handler closes the
-    message it came from; this closes the other, re-rendered from this process's state with the
-    Approve and Reject replaced by the outcome line. Runs for every recorded decision — never a replay.
+    The decision is made on the approval card (plan §9.2, 14 Sep), and the brief names the proposal and
+    points to that card. This closes the card, re-rendered with its Approve and Reject replaced by the
+    outcome line, and rewrites the brief's pointer as that same line. Runs for every recorded decision —
+    never a replay.
     """
     import threading
 
@@ -137,26 +140,29 @@ def decision_closer(automation: Automation, update: Update, *, background: bool 
 
         line = _decided_line(outcome)
         edits: list[tuple[tuple[str, str], list[dict[str, Any]]]] = []
+        brief = automation.briefs.get(outcome.incident_id)
 
         card = automation.cards.get((outcome.incident_id, outcome.action_id))
         if card is not None:
-            closed = close_decision(approval_card_for(pending), action_id=outcome.action_id, line=line)
+            closed = close_decision(approval_card_for(pending, brief=brief), action_id=outcome.action_id, line=line)
             if closed is not None:
                 edits.append((card, closed))
 
-        brief = automation.briefs.get(outcome.incident_id)
         thread = automation.threads.get(outcome.incident_id)
-        # A one-shot is offered on its card only; the brief's buttons belong to the catalog proposal.
+        # A one-shot is named on its card only; the brief's proposal line belongs to the catalog proposal.
         if brief is not None and thread is not None and pending.one_shot is None:
-            blocks = change_brief(
-                brief,
-                proposal_summary=pending.dry_run.summary,
-                action_id=pending.action_id,
-                dry_run_digest=pending.digest,
+            edits.append(
+                (
+                    thread,
+                    change_brief(
+                        brief,
+                        proposal_summary=pending.dry_run.summary,
+                        action_id=pending.action_id,
+                        dry_run_digest=pending.digest,
+                        decided_line=line,
+                    ),
+                )
             )
-            closed = close_decision(blocks, action_id=outcome.action_id, line=line)
-            if closed is not None:
-                edits.append((thread, closed))
 
         def send() -> None:
             for (channel, ts), blocks in edits:
@@ -229,6 +235,43 @@ def record_poster(automation: Automation, upload: Callable[..., Any], *, backgro
     return hook
 
 
+def _save_quietly(store: Any, session: Any) -> None:
+    try:
+        store.save(session)
+    except Exception:  # noqa: BLE001 - a missing stage is logged, never raised into the incident path
+        logger.exception("could not persist session %s to %s", session.incident_id, getattr(store, "name", store))
+
+
+def _investigated_session(response: Response) -> Any:
+    from ..models import Proposal
+    from ..record.session import IncidentSession
+
+    proposal = response.proposal if isinstance(response.proposal, Proposal) else None
+    return IncidentSession.from_brief(response.brief, proposal=proposal)
+
+
+def session_persister(automation: Automation, store: Any, *, background: bool = True) -> Callable[..., None]:
+    """W29 — a decided hook that appends the decided session to the session store (Handoff §10).
+
+    The AgentCore Runtime writes the stages it sees; approval and execution happen here, so this is
+    the only process that can write them. Appends, never overwrites (`record/store.py`), and runs off
+    the Slack listener's thread for the same reason `record_poster` does. Writes nothing for an
+    incident this process did not investigate — it has no brief to build the session from.
+    """
+    import threading
+
+    def hook(pending: Any, outcome: Any) -> None:
+        session = automation.incident_session(pending, outcome)
+        if session is None:
+            return
+        if background:
+            threading.Thread(target=_save_quietly, args=(store, session), daemon=True, name="session-store").start()
+        else:
+            _save_quietly(store, session)
+
+    return hook
+
+
 def build_app(
     automation: Automation,
     *,
@@ -236,6 +279,7 @@ def build_app(
     update: Update | None = None,
     sleep: Sleep = asyncio.sleep,
     dedupe: Any | None = None,
+    sessions: Any | None = None,
 ) -> FastAPI:
     from ..ingest.alerts import UnrecognisedPayload, normalize_alert
     from ..ingest.dedupe import AlertDeduper
@@ -295,6 +339,12 @@ def build_app(
         )
         if follow_up:
             task = asyncio.create_task(_follow_coverage(automation, response, handles, update, sleep))
+            app.state.follow_ups.add(task)
+            task.add_done_callback(app.state.follow_ups.discard)
+
+        # The investigated stage, off the request path: a slow store must not hold the webhook's reply.
+        if sessions is not None:
+            task = asyncio.create_task(asyncio.to_thread(_save_quietly, sessions, _investigated_session(response)))
             app.state.follow_ups.add(task)
             task.add_done_callback(app.state.follow_ups.discard)
 
@@ -364,6 +414,11 @@ def serve(*, host: str = "127.0.0.1", port: int = 8081) -> None:  # pragma: no c
 
     automation.decided_hooks.append(decision_closer(automation, update_message))
     automation.decided_hooks.append(record_poster(automation, upload_record))
+    from ..record.store import session_store_from_env
+
+    sessions = session_store_from_env()
+    if sessions is not None:
+        automation.decided_hooks.append(session_persister(automation, sessions))
     sink = approval_sink(automation.gateway, resolve_approver=member, decisions=automation.decisions)
     command = command_handler(automation, resolve_member=member, decisions=automation.decisions)
     malformed = automation.decisions.record_malformed if automation.decisions is not None else None
@@ -378,7 +433,7 @@ def serve(*, host: str = "127.0.0.1", port: int = 8081) -> None:  # pragma: no c
     if schedule is not None:
         threading.Thread(target=run_on_schedule, kwargs=schedule, daemon=True, name="catalog-growth").start()
 
-    uvicorn.run(build_app(automation, post=post_brief, update=update_message), host=host, port=port)
+    uvicorn.run(build_app(automation, post=post_brief, update=update_message, sessions=sessions), host=host, port=port)
 
 
 if __name__ == "__main__":  # pragma: no cover
