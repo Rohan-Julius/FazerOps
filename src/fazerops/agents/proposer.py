@@ -472,7 +472,7 @@ def proposer_node(state: Any, *, signals: Any | None = None, one_shots: Any | No
     async def run() -> str:
         brief = _brief_from(state, narrative=state.narrative)
         try:
-            state.proposal = await propose(brief, state.narrative)
+            state.proposal = await propose(brief, state.narrative, meter=getattr(state, "meter", None))
         except ProposalRejected as exc:
             state.node_errors["proposer"] = str(exc)
             return "proposal rejected"
@@ -482,7 +482,14 @@ def proposer_node(state: Any, *, signals: Any | None = None, one_shots: Any | No
                 # Ground rule #4 makes this a decline, not a proposal: a card for it could never be
                 # approved. Found live 14 Sep — a model offered a one-key revert of a two-key edit,
                 # and the gap signal and one-shot, which fire only on a decline, never did.
-                state.node_errors["proposer"] = f"proposed {state.proposal.action_id}, handled as a decline: {reason}"
+                # Logged, not put in `node_errors`: a decline is a correct outcome, and a node error
+                # marks the brief degraded — which renders as "a change source was unavailable"
+                # when every source answered (W31, 14 Sep).
+                import logging
+
+                logging.getLogger(__name__).info(
+                    "proposed %s, handled as a decline: %s", state.proposal.action_id, reason
+                )
                 state.proposal = None
         if state.proposal is None:
             if signals is not None:
@@ -498,7 +505,7 @@ def proposer_node(state: Any, *, signals: Any | None = None, one_shots: Any | No
                     logging.getLogger(__name__).exception("could not record a decline signal")
             if one_shots is not None:
                 try:
-                    state.one_shot = await one_shots.offer(brief)
+                    state.one_shot = await one_shots.offer(brief, meter=getattr(state, "meter", None))
                 except Exception:
                     import logging
 

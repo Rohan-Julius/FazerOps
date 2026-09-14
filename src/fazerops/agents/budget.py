@@ -65,6 +65,19 @@ PRICING: dict[str, tuple[float, float]] = {
 _WORST_RATE = max(PRICING.values())
 
 
+def meter_for_mode() -> "TokenMeter | None":
+    """A fresh meter for one run under the active `FAZEROPS_LLM`, or `None` when no model is called.
+
+    The caps below are enforced only where a meter is passed, and until 14 Sep nothing outside
+    the recording scripts passed one: every live investigation ran unmetered and uncapped. Offline
+    modes get none, so stub and cassette runs write no ledger.
+    """
+    from ..config import llm_mode
+    from .llm import requires_network
+
+    return TokenMeter() if requires_network(llm_mode()) else None
+
+
 class BudgetExceeded(RuntimeError):
     """A cap was passed. Raised *after* the usage is recorded — see `TokenMeter.record`."""
 

@@ -89,7 +89,9 @@ async def investigate(
     # `stub` mode it resolves deterministically to exactly what `resolve(alert.service)`
     # and `window_for(alert, hours)` produced before — which is why the golden ranking
     # test is unchanged by this wiring.
-    plan = await orchestrate(alert, hours=hours)
+    from .agents.budget import meter_for_mode
+
+    plan = await orchestrate(alert, hours=hours, meter=meter_for_mode())
     radius, window = plan.radius, plan.window
     collectors = collectors if collectors is not None else build_collectors()
 

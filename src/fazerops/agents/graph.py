@@ -51,6 +51,7 @@ __all__ = [
     "COLLECTOR_NODES",
     "GRAPH_TIMEOUT_MULTIPLE",
     "NODE_TIMEOUT_SECONDS",
+    "ORCHESTRATOR_TIMEOUT_SECONDS",
     "FunctionNode",
     "InvestigationState",
     "build_investigation_graph",
@@ -71,11 +72,18 @@ NODE_TIMEOUT_SECONDS = 30.0
 # the inner one cannot cover: work that never yields to the event loop and so cannot be
 # cancelled by `asyncio.wait_for`.
 #
-# **It is also the only bound on a live orchestrator**, which is a bare `Agent` with no inner
-# timeout. At 2.0 (60 s) a slow Gemini two-turn loop tripped it on 14 Sep and the whole
-# investigation failed with no brief. Raised rather than wrapping the Agent (user decision,
-# 14 Sep); a model call slower than this still fails the graph.
+# At 2.0 (60 s) a slow Gemini two-turn loop tripped it on 14 Sep and the whole investigation
+# failed with no brief, while the orchestrator was a bare `Agent` this was the only bound on.
 GRAPH_TIMEOUT_MULTIPLE = 4.0
+
+# **The live orchestrator's own bound** (14 Sep, night — reverses that day's decision to raise the
+# backstop rather than wrap the Agent, at the user's request). A throttled Gemini orchestrator
+# retried for 124 s, past the backstop, and a 429 that escaped the Agent failed the graph with an
+# HTTP 500 and no brief. Inside the node, a timeout or a failure costs the model's choice of scope
+# and nothing else: the collectors run on the alert's own service over the default window, and the
+# brief says it is degraded. Longer than the 60 s a slow but healthy two-turn loop overran;
+# strictly shorter than the graph's backstop, so the node's timeout is always the one that fires.
+ORCHESTRATOR_TIMEOUT_SECONDS = 90.0
 
 COLLECTOR_NODES = ("cloudtrail", "k8s_audit", "helm", "github")
 
@@ -95,6 +103,8 @@ class InvestigationState:
         # proposal: the investigation layer carries it and never reads it.
         self.one_shot: Any | None = None
         self.node_errors: dict[str, str] = {}
+        # A `TokenMeter` for a run that calls a model (plan §5), `None` otherwise.
+        self.meter: Any | None = None
 
     @property
     def degraded(self) -> bool:
@@ -163,44 +173,28 @@ class FunctionNode(MultiAgentBase):
 
 
 def _orchestrator_node(state: InvestigationState) -> Any:
-    """A real `strands.Agent` whenever the active mode calls a model; a `FunctionNode`
-    otherwise.
+    """The orchestrator agent, run through `orchestrate()` inside a bounded `FunctionNode`.
 
-    Both are Strands nodes and both are scheduled identically. The split exists because
-    `stub` and `cassette` are *defined* as constructing no model client (see
-    `config.require_offline_capable`), and an `Agent` with no model is not a thing to build
-    — it is a credential prompt on a judge's clean machine.
+    In a live mode `orchestrate()` builds a real `strands.Agent` with the three typed tools and
+    runs it under `Limits(turns=MAX_TURNS)`; in `stub` and `cassette` it builds none. It is the
+    correlator's shape — an Agent constructed inside its node — for the same reason: the node
+    is where a failure can be absorbed. A bare `Agent` node had no turn cap, no fallback and no
+    timeout of its own, so a throttled model failed the whole graph (14 Sep).
 
-    In the deployed configuration this is `add_node(Agent, "orchestrator")`, so plan
-    §3.2a's table row is literally true rather than true-in-spirit.
+    Three bounds, each owned by exactly one layer: the turn cap and the fallback plan by
+    `orchestrate()`, which never raises on a model failure; the wall clock by this node's
+    `ORCHESTRATOR_TIMEOUT_SECONDS`. A timeout leaves `state.plan` unset, and `_require_plan`
+    then builds the plan from whatever the tools had already dispatched, or the fallback scope.
     """
-    from ..config import llm_mode
-    from .llm import requires_network
-
-    if not requires_network(llm_mode()):
-        return FunctionNode("orchestrator", lambda: _run_orchestrator(state), state)
-
-    from strands import Agent
-
-    from .llm import model_for, provider_for
-    from .orchestrator import _client_for, build_tools
-    from .prompts.orchestrator import SYSTEM_PROMPT
-
-    mode = llm_mode()
-    model_id = model_for("orchestrator", mode)
-    return Agent(
-        model=_client_for(provider_for(mode), model_id),
-        tools=build_tools(state.session),
-        system_prompt=SYSTEM_PROMPT,
-        name="orchestrator",
-        callback_handler=None,
+    return FunctionNode(
+        "orchestrator", lambda: _run_orchestrator(state), state, timeout=ORCHESTRATOR_TIMEOUT_SECONDS
     )
 
 
 async def _run_orchestrator(state: InvestigationState) -> str:
     from .orchestrator import orchestrate
 
-    state.plan = await orchestrate(state.alert, session=state.session)
+    state.plan = await orchestrate(state.alert, session=state.session, meter=state.meter)
     return f"scope: {state.plan.service}, window: {state.plan.window.hours:.0f}h"
 
 
@@ -226,7 +220,7 @@ def _correlator_node(state: InvestigationState) -> Any:
 
         brief = _brief_from(state, narrative=None)
         try:
-            state.narrative = await correlate(brief)
+            state.narrative = await correlate(brief, meter=state.meter)
         except NarrativeRejected as exc:
             # Handoff §6: a brief with no explanation is still a ranked, cited list of what
             # changed, which is the product. A wrong explanation is not.
@@ -328,6 +322,7 @@ async def investigate_via_graph(
     collectors: list[Collector] | None = None,
     node_timeout: float = NODE_TIMEOUT_SECONDS,
     proposer_node: Callable[[InvestigationState], Any] | None = None,
+    state: InvestigationState | None = None,
 ) -> tuple[Brief, Any]:
     """Run one investigation through the Strands Graph. Returns the brief and the graph
     result, so a caller (and `test_graph_topology.py`) can inspect `execution_order`.
@@ -335,8 +330,13 @@ async def investigate_via_graph(
     Any proposal the injected proposer node produced is left on `state.proposal` rather
     than returned. The `Brief` is the seam's contract and a `Proposal` is not part of it
     (plan §3.5); a caller on the automation side holds the state and reads it from there.
+    A caller that wants to say *why* a brief is degraded passes its own `state` and reads
+    `state.node_errors` afterwards — the `Brief` carries only the flag.
     """
-    state = InvestigationState(alert)
+    from .budget import meter_for_mode
+
+    state = state if state is not None else InvestigationState(alert)
+    state.meter = meter_for_mode()
     graph = build_investigation_graph(
         state,
         collectors=collectors,
