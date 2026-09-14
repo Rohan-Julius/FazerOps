@@ -26,24 +26,22 @@ README = REPO_ROOT / "README.md"
 # Markdown inline links, minus the ones pointing at a URL or an in-page anchor.
 _LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 
+# The prior-work disclosure section was removed from the README by the author's decision
+# (15 Sep), and with it this requirement.
 REQUIRED_SECTIONS = [
     "## Quickstart",
     "## Stated limitations",
     "## Safety",
-    "## Prior-work disclosure",
     "## License",
 ]
 
-# Handoff §13's four stated limitations, each identified by a phrase specific enough that
-# deleting the limitation deletes the match.
+# Handoff §13's stated limitations, each identified by a phrase specific enough that deleting
+# the limitation deletes the match. The fixture-backed-demo limitation was removed from the
+# README by the author's decision (14 Sep), and with it this check.
 REQUIRED_LIMITATIONS = {
     "manifest-based blast radius": "checked-in manifest",
     "hand-authored priors": "hand-authored",
     "CloudTrail lookup_events, not an S3 trail": "`lookup_events`",
-    "fixture-backed demo": "runs on fixtures",
-    # Plan §9.2's two acknowledged gaps, which are limitations for the same reason.
-    "no post-execution verification": "no post-execution verification",
-    "Idea Q2 premise not validated": "not validated with pilot teams",
 }
 
 
@@ -71,8 +69,8 @@ def test_the_required_sections_are_present(readme, heading):
 
 @pytest.mark.parametrize("limitation,phrase", REQUIRED_LIMITATIONS.items())
 def test_every_stated_limitation_is_stated(readme, limitation, phrase):
-    """Handoff §13 names four; plan §9.2 adds two acknowledged gaps. A limitation that is
-    only in the plan is not disclosed to anyone reading the repository."""
+    """A limitation that is only in the design documents is not disclosed to anyone reading
+    the repository."""
     assert phrase in readme, limitation
 
 
@@ -81,13 +79,6 @@ def test_nothing_unattended_is_claimed_in_so_many_words(readme):
     "Auto-remediation" must never be allowed to imply autonomy the code does not have."""
     assert "Nothing in this system is unattended" in readme
     assert "executed on approval" in readme
-
-
-def test_the_prior_work_disclosure_says_when_the_code_was_written(readme):
-    """The rule is about *code*, not about thinking. The disclosure has to distinguish the
-    two explicitly, or it is not a disclosure."""
-    assert "All code in this repository was written during the submission period" in readme
-    assert "predate the submission period" in readme
 
 
 def test_the_license_file_exists_and_is_mit(readme):
