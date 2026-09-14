@@ -15,7 +15,9 @@ Slack happens only when this is run with Slack credentials; the tests post to a 
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import asyncio
+import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 # At module level on purpose: FastAPI resolves a route's annotations by name, and a `Request`
@@ -29,35 +31,89 @@ from .runtime import Automation, Response
 __all__ = ["build_app", "messages_for", "serve"]
 
 Post = Callable[..., Any]
+Update = Callable[..., Any]
+Sleep = Callable[[float], Awaitable[Any]]
+
+logger = logging.getLogger(__name__)
 
 
 def messages_for(response: Response) -> list[tuple[list[dict[str, Any]], str]]:
     """The brief, then one card per opened approval, each with its notification text."""
-    from ..slack.blocks import change_brief
+    from ..render.text import approval_card_note
     from ..slack.handlers import approval_card_for
 
-    brief = response.brief
-    proposal = response.proposal
-    catalog_card = next((p for p in response.pending if p.one_shot is None), None)
-    messages = [
-        (
-            change_brief(
-                brief,
-                proposal_summary=catalog_card.dry_run.summary if catalog_card is not None else None,
-                action_id=proposal.action_id if proposal is not None else None,
-            ),
-            f"{brief.incident_id}: {len(brief.candidates)} change(s) in the {brief.alert.service} blast radius",
-        )
-    ]
+    note = approval_card_note(response.brief)
+    messages = [_brief_message(response, response.brief)]
     for pending in response.pending:
-        messages.append((approval_card_for(pending), f"Approval required: {pending.action_id} for {pending.incident_id}"))
+        messages.append((approval_card_for(pending, coverage_note=note), _card_text(pending)))
     return messages
 
 
-def build_app(automation: Automation, *, post: Post | None = None) -> FastAPI:
+def _brief_message(response: Response, brief: Any) -> tuple[list[dict[str, Any]], str]:
+    from ..slack.blocks import change_brief
+
+    catalog_card = next((p for p in response.pending if p.one_shot is None), None)
+    blocks = change_brief(
+        brief,
+        proposal_summary=catalog_card.dry_run.summary if catalog_card is not None else None,
+        action_id=response.proposal.action_id if response.proposal is not None else None,
+    )
+    return blocks, f"{brief.incident_id}: {len(brief.candidates)} change(s) in the {brief.alert.service} blast radius"
+
+
+def _card_text(pending: Any) -> str:
+    return f"Approval required: {pending.action_id} for {pending.incident_id}"
+
+
+def _handle(posted: Any) -> tuple[str, str] | None:
+    """The `(channel, ts)` a posted message is edited by. Slack's response supports item access; a
+    poster that returns nothing leaves nothing to edit."""
+    try:
+        return str(posted["channel"]), str(posted["ts"])
+    except (KeyError, TypeError):
+        return None
+
+
+async def _follow_coverage(
+    automation: Automation, response: Response, handles: list[tuple[str, str] | None], update: Update, sleep: Sleep
+) -> None:
+    """Edit the posted brief — and every card drafted from it — as late changes arrive and when the
+    gap closes. In place, so the message a person opens is the current one."""
+    from ..render.text import approval_card_note
+    from ..slack.handlers import approval_card_for
+
+    brief_handle, card_handles = handles[0], handles[1:]
+    notes = [approval_card_note(response.brief)] * len(response.pending)
+
+    def on_update(change: Any) -> None:
+        if brief_handle is not None:
+            blocks, text = _brief_message(response, change.brief)
+            update(brief_handle[0], brief_handle[1], blocks, text=text)
+        note = approval_card_note(change.brief)
+        for index, (pending, handle) in enumerate(zip(response.pending, card_handles)):
+            if handle is not None and note != notes[index]:
+                update(handle[0], handle[1], approval_card_for(pending, coverage_note=note), text=_card_text(pending))
+                notes[index] = note
+
+    try:
+        await automation.follow_coverage(response.brief, on_update, sleep=sleep)
+    except Exception:  # following a gap must never surface as a crash in the incident path
+        logger.exception("following coverage for %s failed", response.brief.incident_id)
+
+
+def build_app(
+    automation: Automation,
+    *,
+    post: Post | None = None,
+    update: Update | None = None,
+    sleep: Sleep = asyncio.sleep,
+) -> FastAPI:
     from ..ingest.alerts import UnrecognisedPayload, normalize_alert
 
     app = FastAPI(title="FazerOps automation", version="0.1.0")
+    # Held so a pending follow-up is not garbage-collected mid-sleep (asyncio keeps only a weak
+    # reference to a task).
+    app.state.follow_ups = set()
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -72,9 +128,20 @@ def build_app(automation: Automation, *, post: Post | None = None) -> FastAPI:
 
         response = await automation.respond(alert)
         messages = messages_for(response)
-        if post is not None:
-            for blocks, text in messages:
-                post(blocks, text=text)
+        handles = [_handle(post(blocks, text=text)) for blocks, text in messages] if post is not None else []
+
+        # The brief has already posted; this only follows it. Without a way to edit it in place
+        # there is nothing to follow into.
+        follow_up = (
+            update is not None
+            and bool(handles)
+            and handles[0] is not None
+            and any(gap.status == "open" for gap in response.brief.coverage_gaps)
+        )
+        if follow_up:
+            task = asyncio.create_task(_follow_coverage(automation, response, handles, update, sleep))
+            app.state.follow_ups.add(task)
+            task.add_done_callback(app.state.follow_ups.discard)
 
         one_shot = response.one_shot
         return JSONResponse(
@@ -85,6 +152,7 @@ def build_app(automation: Automation, *, post: Post | None = None) -> FastAPI:
                 "pending": [pending.action_id for pending in response.pending],
                 "refused": response.refused,
                 "posted": len(messages) if post is not None else 0,
+                "coverage_follow_up": follow_up,
             }
         )
 
@@ -128,7 +196,7 @@ def serve(*, host: str = "127.0.0.1", port: int = 8081) -> None:  # pragma: no c
 
     import uvicorn
 
-    from ..slack.handlers import approval_sink, post_brief, run_socket_mode
+    from ..slack.handlers import approval_sink, post_brief, run_socket_mode, update_message
     from .growth.job import run_on_schedule
     from .roster import default_roster
 
@@ -141,7 +209,7 @@ def serve(*, host: str = "127.0.0.1", port: int = 8081) -> None:  # pragma: no c
     if schedule is not None:
         threading.Thread(target=run_on_schedule, kwargs=schedule, daemon=True, name="catalog-growth").start()
 
-    uvicorn.run(build_app(automation, post=post_brief), host=host, port=port)
+    uvicorn.run(build_app(automation, post=post_brief, update=update_message), host=host, port=port)
 
 
 if __name__ == "__main__":  # pragma: no cover

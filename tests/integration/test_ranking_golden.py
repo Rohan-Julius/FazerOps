@@ -99,6 +99,15 @@ def test_every_candidate_cites_evidence_that_exists(brief):
         assert candidate.event.raw_ref
 
 
+def test_the_demo_ranking_does_not_depend_on_the_weights(brief):
+    """F2. The ConfigMap is ahead of every other change on every feature, so no weighting of
+    `config/weights.yaml` ranks anything above it — the answer to "were the weights tuned to
+    the demo?" is a property of the data, not a claim. A re-recorded fixture that loses this
+    must be looked at, even if the margin floor above still passes."""
+    assert brief.stability is not None
+    assert brief.stability.dominant is True
+
+
 def test_the_demo_reports_nothing_shipped_through_ci(brief):
     """Idea.md §7: the scenario was chosen because the cause is invisible to GitHub. If
     this line ever reads otherwise, the pitch is wrong, not just the brief."""

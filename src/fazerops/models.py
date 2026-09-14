@@ -15,7 +15,7 @@ Two invariants are enforced here rather than downstream, because both fail silen
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Literal
 
@@ -324,6 +324,58 @@ class CIStatus(BaseModel):
     repos_checked: list[str] = Field(default_factory=list)
 
 
+class CoverageGap(BaseModel):
+    """The part of the window a source answered for but could not yet see.
+
+    A source whose events arrive late — CloudTrail's do — returns *ok, zero events* for the
+    minutes before the alert, which are exactly the minutes `temporal_proximity` scores
+    highest. That is not a failed source, so it is not `degraded` (every live brief built at
+    alert time would be); it is a stated hole in the evidence, rendered as such.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    source: ChangeSource
+    unobserved: TimeWindow
+    delivery_lag_minutes: float = Field(gt=0)
+    status: Literal["open", "caught_up", "unreachable"] = Field(
+        default="open",
+        description="`open` while late changes may still arrive; closed by `coverage.watch_coverage` "
+        "once the source has had its full lag to deliver, or could not be reached to check.",
+    )
+    checked_at: AwareDatetime | None = None
+    late_changes: int = Field(default=0, ge=0)
+
+    @property
+    def settles_at(self) -> datetime:
+        """When a re-query of the same window would see everything the source will deliver."""
+        return self.unobserved.end + timedelta(minutes=self.delivery_lag_minutes)
+
+
+class RankStability(BaseModel):
+    """Whether rank 1 depends on the weights (`correlation/sensitivity.py`).
+
+    A statement about the scorer, not about the world: rendered for the human, never
+    projected into model context, never an input to a score.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    dominant: bool = Field(
+        description="Rank 1 is >= every other candidate on every feature, so no non-negative "
+        "weighting can rank another candidate above it."
+    )
+    margin: float
+    challenger_rank: int | None = None
+    feature: str | None = None
+    weight_from: float | None = None
+    weight_to: float | None = Field(
+        default=None,
+        description="The single-weight value at which the challenger draws level with rank 1 "
+        "— the smallest such change across every feature and challenger.",
+    )
+
+
 class Brief(BaseModel):
     """What the investigation layer emits. Plan §3.5: a `Brief` must render — to Slack,
     stdout or markdown — with the entire automation layer deleted."""
@@ -346,6 +398,19 @@ class Brief(BaseModel):
         default=False,
         description="True when a collector failed or the orchestrator hit its turn cap. "
         "The brief still renders; it says so rather than silently reporting less.",
+    )
+    stability: RankStability | None = Field(
+        default=None, description="None with fewer than two candidates."
+    )
+    coverage_gaps: list[CoverageGap] = Field(default_factory=list)
+    reranked_at: AwareDatetime | None = Field(
+        default=None, description="When late changes last changed this brief's ranking."
+    )
+    ranked_first_from: str | None = Field(
+        default=None,
+        description="The event that was rank 1 when the brief was first posted, set only while a "
+        "late change has displaced it. The proposal and any approval card were drafted from that "
+        "ranking, and say so.",
     )
 
     @model_validator(mode="after")

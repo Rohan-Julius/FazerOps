@@ -354,7 +354,9 @@ def _brief_from(state: InvestigationState, *, narrative: Any) -> Brief:
     """
     from ..collectors.github import ci_status_from
     from ..correlation.scoring import score_events
+    from ..correlation.sensitivity import rank_stability
     from ..ledger.store import LedgerStore
+    from ..pipeline import coverage_gaps_from
 
     plan = _require_plan(state)
     ledger = LedgerStore()
@@ -382,4 +384,6 @@ def _brief_from(state: InvestigationState, *, narrative: Any) -> Brief:
         narrative=narrative.text if narrative is not None else None,
         evidence_ids=list(narrative.evidence_ids) if narrative is not None else [],
         degraded=state.degraded or not plan.radius.keys,
+        stability=rank_stability(candidates),
+        coverage_gaps=coverage_gaps_from(state.results),
     )

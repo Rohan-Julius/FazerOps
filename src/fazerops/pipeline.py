@@ -26,6 +26,7 @@ from .collectors.github import GitHubCollector, ci_status_from
 from .collectors.helm import HelmCollector
 from .collectors.k8s_audit import K8sAuditCollector
 from .correlation.scoring import score_events
+from .correlation.sensitivity import rank_stability
 from .ledger.store import LedgerStore
 from .models import Alert, Brief, CIStatus, TimeWindow
 
@@ -127,4 +128,14 @@ async def investigate(
         candidates=candidates,
         ci_status=ci_status,
         degraded=degraded,
+        stability=rank_stability(candidates),
+        coverage_gaps=coverage_gaps_from(results),
+    )
+
+
+def coverage_gaps_from(results: list[CollectorResult]) -> list:
+    """Only from sources that answered: a failed source is `degraded`, which already says more."""
+    return sorted(
+        (result.coverage_gap for result in results if result.ok and result.coverage_gap is not None),
+        key=lambda gap: gap.source,
     )

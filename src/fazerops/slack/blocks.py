@@ -84,6 +84,12 @@ def change_brief(
         {"type": "section", "text": _mrkdwn(f"> {_escape(brief.alert.summary)}")},
     ]
 
+    from ..render.text import describe_reranked
+
+    reranked = describe_reranked(brief)
+    if reranked:
+        blocks.append({"type": "context", "elements": [_mrkdwn(f":arrows_counterclockwise: *{_escape(reranked)}*")]})
+
     if not brief.radius.keys:
         # The same distinction the text renderer draws: "we did not know where to look" is
         # not "nothing changed", and an empty candidate list on a card reads as the latter.
@@ -105,6 +111,13 @@ def change_brief(
     for candidate in shown:
         blocks.extend(_candidate_blocks(candidate, brief))
 
+    if brief.stability is not None:
+        from ..render.text import describe_stability
+
+        blocks.append(
+            {"type": "context", "elements": [_mrkdwn(f":scales: {_escape(describe_stability(brief.stability, brief))}")]}
+        )
+
     blocks.append({"type": "context", "elements": [_mrkdwn(_ci_line(brief))]})
 
     if brief.narrative:
@@ -121,6 +134,13 @@ def change_brief(
                     )
                 ],
             }
+        )
+
+    for gap in brief.coverage_gaps:
+        from ..render.text import describe_coverage_gap
+
+        blocks.append(
+            {"type": "context", "elements": [_mrkdwn(f":hourglass_flowing_sand: {_escape(describe_coverage_gap(gap))}")]}
         )
 
     blocks.extend(
@@ -143,6 +163,7 @@ def approval_card(
     provisional: bool = False,
     graduation: tuple[int, int] | None = None,
     one_shot: str | None = None,
+    coverage_note: str | None = None,
 ) -> list[dict[str, Any]]:
     """The approval card. Handoff §9's four required elements, in its order.
 
@@ -165,6 +186,11 @@ def approval_card(
         },
         {"type": "section", "text": _mrkdwn(_code(_diff_text(dry_run)))},
     ]
+
+    # Above the diff, where it is read before the decision: the ranking this card was drafted from
+    # may still change, or already has (`render.text.approval_card_note`).
+    if coverage_note:
+        blocks.insert(3, {"type": "context", "elements": [_mrkdwn(f":warning: *{_escape(coverage_note)}*")]})
 
     # Ground rule #4 on the one surface an operator actually reads. An action whose inverse
     # could not be computed says so here in the same words `execute()` will refuse with,
@@ -310,6 +336,18 @@ def _proposal_blocks(
         blocks.append(
             {"type": "section", "text": _mrkdwn(f"*Proposed*  {_escape(proposal_summary)}")}
         )
+        if brief.ranked_first_from is not None:
+            blocks.append(
+                {
+                    "type": "context",
+                    "elements": [
+                        _mrkdwn(
+                            ":warning: This proposal was drafted from the ranking before late changes "
+                            "arrived. Check it against the new #1 before approving."
+                        )
+                    ],
+                }
+            )
     else:
         blocks.append(
             {

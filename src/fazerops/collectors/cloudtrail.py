@@ -30,7 +30,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from ..config import require_offline_capable
@@ -42,6 +42,14 @@ logger = logging.getLogger(__name__)
 
 REGION = "us-east-1"
 MAX_EVENTS = 200
+
+# AWS documents CloudTrail delivery as averaging about five minutes and explicitly not
+# guaranteed. Measured on this account on 14 Sep (`ssm:DeleteParameter` probes on names that do
+# not exist, polled through `lookup_events`): 124, 135, 135, 145, 146 s — median 135 s, ±10 s.
+# Fifteen minutes is six times the worst of those on purpose. Five samples from one evening and
+# one event source say nothing about the tail, and the asymmetry decides it: a margin that is
+# too long costs a later follow-up, one that is too short lets a late change read as no change.
+DELIVERY_LAG = timedelta(minutes=15)
 
 # Handoff §5, verbatim: "drop anything starting `Describe`, `Get`, `List`, and drop
 # `AssumeRole`." Read events are noise and they vastly outnumber writes — a 4-hour window
@@ -109,6 +117,7 @@ SOURCE_KINDS = {
 class CloudTrailCollector(BaseCollector):
     source = "cloudtrail"
     fixture_dir = "cloudtrail"
+    delivery_lag = DELIVERY_LAG
 
     async def _fetch_live(
         self, radius: BlastRadius, window: TimeWindow

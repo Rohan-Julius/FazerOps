@@ -14,11 +14,12 @@ from __future__ import annotations
 
 import abc
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from ..config import Mode, mode
-from ..models import BlastRadius, ChangeEvent, ChangeSource, TimeWindow
+from ..models import BlastRadius, ChangeEvent, ChangeSource, CoverageGap, TimeWindow
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[3] / "fixtures"
 
@@ -32,17 +33,19 @@ class CollectorResult:
     says which source was unavailable.
     """
 
-    __slots__ = ("source", "events", "error")
+    __slots__ = ("source", "events", "error", "coverage_gap")
 
     def __init__(
         self,
         source: ChangeSource,
         events: list[ChangeEvent],
         error: str | None = None,
+        coverage_gap: CoverageGap | None = None,
     ) -> None:
         self.source = source
         self.events = events
         self.error = error
+        self.coverage_gap = coverage_gap
 
     @property
     def ok(self) -> bool:
@@ -72,7 +75,15 @@ class BaseCollector(abc.ABC):
     source: ChangeSource
     fixture_dir: str
 
+    delivery_lag: timedelta = timedelta(0)
+    """How long after a change this source can take to report it. Non-zero only where the
+    source says so (CloudTrail); a query at alert time cannot see the last `delivery_lag` of
+    the window, and `fetch` reports that stretch as a `CoverageGap` rather than as silence."""
+
     async def fetch(self, radius: BlastRadius, window: TimeWindow) -> CollectorResult:
+        # Taken before the call: an event delivered while the call runs may or may not be in
+        # the answer, so the earlier instant is the one the gap can be vouched for from.
+        queried_at = self._now()
         try:
             raw_items = await self._fetch_raw(radius, window)
         except Exception as exc:  # noqa: BLE001 - see CollectorResult's docstring
@@ -92,7 +103,24 @@ class BaseCollector(abc.ABC):
             events.append(event)
 
         events.sort(key=lambda e: e.occurred_at)
-        return CollectorResult(self.source, events)
+        return CollectorResult(self.source, events, coverage_gap=self._coverage_gap(window, queried_at))
+
+    def _now(self) -> datetime:
+        return datetime.now(timezone.utc)
+
+    def _coverage_gap(self, window: TimeWindow, queried_at: datetime) -> CoverageGap | None:
+        """The tail of `window` this query could not yet see. A fixture is a finished recording,
+        so it has none — which is also what keeps the demo and the golden ranking unchanged."""
+        if mode() is Mode.FIXTURE or self.delivery_lag <= timedelta(0):
+            return None
+        settled = queried_at - self.delivery_lag
+        if settled >= window.end:
+            return None
+        return CoverageGap(
+            source=self.source,
+            unobserved=TimeWindow(start=max(window.start, settled), end=window.end),
+            delivery_lag_minutes=self.delivery_lag.total_seconds() / 60.0,
+        )
 
     async def _fetch_raw(self, radius: BlastRadius, window: TimeWindow) -> list[dict[str, Any]]:
         if mode() is Mode.FIXTURE:

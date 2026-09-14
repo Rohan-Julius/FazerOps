@@ -300,6 +300,16 @@ def test_an_unresolvable_service_says_so_rather_than_rendering_an_empty_list():
 # --------------------------------------------------------------------------------------
 
 
+def test_a_coverage_note_sits_above_the_diff_where_it_is_read_before_deciding():
+    note = "CloudTrail changes after 14:26 UTC may still arrive until 14:56 UTC. This card was drafted before they could be seen."
+    card = approval_card(_demo_dry_run(), incident_id="INC-1", tier=Tier.ENGINEER_APPROVAL, coverage_note=note)
+    texts = [json.dumps(block) for block in card]
+    note_at = next(i for i, text in enumerate(texts) if "may still arrive until" in text)
+    diff_at = next(i for i, text in enumerate(texts) if "```" in text)
+    assert note_at < diff_at
+    assert "may still arrive" not in json.dumps(approval_card(_demo_dry_run(), incident_id="INC-1", tier=Tier.ENGINEER_APPROVAL))
+
+
 def _demo_dry_run():
     request = request_from_hint(CONFIGMAP_HINT)
     assert request is not None

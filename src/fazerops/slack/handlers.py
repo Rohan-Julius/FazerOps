@@ -240,7 +240,7 @@ def _record_only(decision: Decision) -> str:
     )
 
 
-def approval_card_for(pending: Any) -> list[dict[str, Any]]:
+def approval_card_for(pending: Any, *, coverage_note: str | None = None) -> list[dict[str, Any]]:
     """Render the approval card for a `PendingApproval`. W26b.
 
     The one mapping from gateway state to card, so a caller cannot hand `approval_card` the
@@ -262,6 +262,7 @@ def approval_card_for(pending: Any) -> list[dict[str, Any]]:
             if pending.one_shot is None
             else ("human-written" if pending.one_shot.authored_by == "human" else "generated")
         ),
+        coverage_note=coverage_note,
     )
 
 
@@ -360,6 +361,24 @@ def post_brief(
     config = config if config is not None else slack_config()
     client = client if client is not None else WebClient(token=config.bot_token)
     return client.chat_postMessage(channel=config.channel_id, blocks=blocks, text=text)
+
+
+def update_message(
+    channel: str,
+    ts: str,
+    blocks: list[dict[str, Any]],
+    *,
+    text: str,
+    config: SlackConfig | None = None,
+    client: Any | None = None,
+) -> dict[str, Any]:
+    """Edit a posted message in place. The brief a person opens is then the current one, rather than
+    the first of several they have to reconcile."""
+    from slack_sdk import WebClient
+
+    config = config if config is not None else slack_config()
+    client = client if client is not None else WebClient(token=config.bot_token)
+    return client.chat_update(channel=channel, ts=ts, blocks=blocks, text=text)
 
 
 def run_socket_mode(*, sink: DecisionSink | None = None) -> None:  # pragma: no cover - a loop
