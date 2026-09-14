@@ -24,13 +24,18 @@ improving.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ..models import Brief, Candidate
 from ..security.envelope import render_alert_for_llm, render_candidate_for_llm
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "Claim",
@@ -392,6 +397,29 @@ GEMINI_PARAMS: dict[str, Any] = {
     "thinking_config": {"thinking_level": "low"},
 }
 
+# Vertex answers a preview model's exhausted shared quota with 429 and an overloaded backend with
+# 5xx, and both clear on their own. Strands retries them for a streamed `Agent`; `structured_output`
+# below calls the SDK directly and had no retry, so a single 429 nulled a deployed brief's narrative
+# on 14 Sep (GCP's request metrics show it at 14:49Z). Three attempts and at most 6 s of waiting —
+# inside the graph backstop, and short enough that a real outage still degrades the brief.
+TRANSIENT_RETRY_DELAYS_SECONDS: tuple[float, ...] = (2.0, 4.0)
+
+
+async def _retrying_transient(call: Callable[[], Awaitable[Any]]) -> Any:
+    from google.genai import errors
+
+    for attempt, delay in enumerate((*TRANSIENT_RETRY_DELAYS_SECONDS, None), start=1):
+        try:
+            return await call()
+        except errors.APIError as exc:
+            transient = exc.code == 429 or (exc.code or 0) >= 500
+            if delay is None or not transient:
+                raise
+            logger.warning(
+                "gemini returned %s on attempt %d; retrying in %.0fs", exc.code, attempt, delay
+            )
+            await asyncio.sleep(delay)
+
 
 def generation_params_for(mode: Any) -> dict[str, Any]:
     """The generation parameters a live call under `mode` sends — and so part of its
@@ -486,7 +514,9 @@ def _gemini_model(model: str):
             # before the await resumes, its finaliser closes the aiohttp session, and the
             # call dies inside aiohttp on `assert self._connector is not None`.
             client = self._get_client()
-            response = await client.aio.models.generate_content(**request)
+            response = await _retrying_transient(
+                lambda: client.aio.models.generate_content(**request)
+            )
 
             usage = response.usage_metadata
             if usage is not None:

@@ -74,3 +74,89 @@ def test_a_schema_violation_still_raises(monkeypatch, parsed):
     """The override only stops treating *absence* as an error — a wrong shape is still one."""
     with pytest.raises(ValueError):
         _events(monkeypatch, _response(parsed=parsed))
+
+
+# --- transient errors -----------------------------------------------------------------
+
+
+def _api_error(code: int):
+    from google.genai import errors
+
+    cls = errors.ServerError if code >= 500 else errors.ClientError
+    return cls(code, {"error": {"code": code, "status": "TEST", "message": "fake"}})
+
+
+def _events_after(monkeypatch, outcomes):
+    """Like `_events`, but the fake client plays `outcomes` in order — an exception is raised,
+    anything else returned — and the number of calls it received comes back too."""
+    monkeypatch.setattr("fazerops.agents.correlator.TRANSIENT_RETRY_DELAYS_SECONDS", (0.0, 0.0))
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-real")
+    model = _gemini_model("gemini-3.1-pro-preview")
+    calls = []
+
+    async def generate_content(**_):
+        outcome = outcomes[len(calls)]
+        calls.append(outcome)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    fake = SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate_content)))
+    monkeypatch.setattr(model, "_get_client", lambda: fake)
+
+    async def collect():
+        messages = [{"role": "user", "content": [{"text": "x"}]}]
+        return [event async for event in model.structured_output(_WireOutput, messages, "sys")]
+
+    try:
+        return asyncio.run(collect()), len(calls)
+    except Exception as exc:
+        exc.calls = len(calls)
+        raise
+
+
+OK = {"primary_cause_event_id": "e1", "confidence": "high"}
+
+
+def test_a_throttled_call_is_retried_and_its_answer_kept(monkeypatch):
+    """The 14 Sep degraded brief: one 429 on the correlator's call, no retry, no narrative."""
+    events, calls = _events_after(monkeypatch, [_api_error(429), _response(parsed=OK)])
+
+    assert calls == 2
+    assert any("output" in event for event in events)
+
+
+def test_a_server_error_is_retried_too(monkeypatch):
+    events, calls = _events_after(
+        monkeypatch, [_api_error(503), _api_error(500), _response(parsed=OK)]
+    )
+
+    assert calls == 3
+    assert any("output" in event for event in events)
+
+
+def test_retries_are_bounded(monkeypatch):
+    """A real outage must still degrade the brief, not hold it past the graph's backstop."""
+    from google.genai import errors
+
+    with pytest.raises(errors.ClientError) as raised:
+        _events_after(monkeypatch, [_api_error(429)] * 3 + [_response(parsed=OK)])
+
+    assert raised.value.calls == 3
+
+
+def test_a_request_error_is_not_retried(monkeypatch):
+    """A 400 is our request, not the provider's weather; sending it again cannot help."""
+    from google.genai import errors
+
+    with pytest.raises(errors.ClientError) as raised:
+        _events_after(monkeypatch, [_api_error(400), _response(parsed=OK)])
+
+    assert raised.value.calls == 1
+
+
+def test_the_retry_waits_are_short():
+    from fazerops.agents.correlator import TRANSIENT_RETRY_DELAYS_SECONDS
+
+    assert len(TRANSIENT_RETRY_DELAYS_SECONDS) == 2
+    assert sum(TRANSIENT_RETRY_DELAYS_SECONDS) <= 10
