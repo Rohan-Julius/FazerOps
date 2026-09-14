@@ -149,6 +149,14 @@ async def run_cycle(
     from .pr import AlreadyCommitted, attest_bundle, check_agent_commits, commit_bundle_to_branch, open_pull_request, sync_base
     from .sandbox import RecipeClass, recipe_for
 
+    from ...ledger.chain import LedgerUntrusted, usable_as_evidence
+
+    # Before mining, not at signing: a gap mined from a rewritten ledger can end in generated
+    # code, and every step between here and `attest_bundle` would be spent on planted history.
+    integrity = getattr(ledger, "integrity", None)
+    if integrity is not None and not usable_as_evidence(integrity, key_configured=evidence_key is not None):
+        raise LedgerUntrusted(f"the ledger is {integrity.value} ({ledger.integrity_detail}); nothing is mined from it")
+
     thresholds = thresholds if thresholds is not None else load_thresholds()
     opener = opener if opener is not None else open_pull_request
     outcomes: list[CycleOutcome] = []
@@ -260,7 +268,7 @@ async def mine_once(
     from .signals import GapSignalStore
 
     state_dir = Path(state_dir)
-    ledger = LedgerStore(state_dir / "ledger.jsonl")
+    ledger = LedgerStore(state_dir / "ledger.jsonl", key=evidence_key)
     store = GapSignalStore(state_dir / "gap_signals.jsonl")
     added = await collect_history(ledger, window, collectors=collectors) if collect else 0
     outcomes = await run_cycle(

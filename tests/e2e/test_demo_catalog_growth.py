@@ -51,6 +51,9 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setenv("FAZEROPS_MODE", "live")
     monkeypatch.setenv("FAZEROPS_LLM", "stub")
     monkeypatch.setenv("FAZEROPS_SANDBOX_CONTEXT", "k3d-fazerops")
+    # As deployed: the server that records incidents and the job that mines them share the ledger's
+    # key from the first write. A ledger the server starts unsigned is one the job refuses to mine.
+    monkeypatch.setenv("FAZEROPS_EVIDENCE_KEY", KEY.decode())
     state = tmp_path / "identities"
     demo_world.setup(state)
     yield demo_world, state

@@ -42,6 +42,10 @@ def main(argv: list[str] | None = None) -> int:
     mine.add_argument("--remote", default="origin")
 
     sub.add_parser("lifecycle", help="graduation and retirement recommendations")
+    sub.add_parser(
+        "sign-ledger",
+        help="sign a ledger started without FAZEROPS_EVIDENCE_KEY (stop the server and job first)",
+    )
 
     args = parser.parse_args(argv)
     if args.command == "mine" and args.open_pr and not args.commit_to:
@@ -50,7 +54,27 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "mine":
         return asyncio.run(_mine(args, state_dir))
+    if args.command == "sign-ledger":
+        return _sign_ledger(state_dir)
     return _lifecycle(state_dir)
+
+
+def _sign_ledger(state_dir: Path) -> int:
+    from ...config import EVIDENCE_KEY_ENV, evidence_key
+    from ...ledger.chain import LedgerIntegrityError, LedgerUntrusted, sign_unsigned
+
+    key = evidence_key()
+    if key is None:
+        print(f"{EVIDENCE_KEY_ENV} is not set: there is nothing to sign with")
+        return 1
+    ledger = state_dir / "ledger.jsonl"
+    for path in (ledger, ledger.with_name(f"{ledger.stem}.alerts.jsonl")):
+        try:
+            print(f"{path}: {sign_unsigned(path, key).value}")
+        except (LedgerUntrusted, LedgerIntegrityError) as exc:
+            print(f"refused: {exc}")
+            return 1
+    return 0
 
 
 async def _mine(args: argparse.Namespace, state_dir: Path) -> int:
@@ -63,7 +87,24 @@ async def _mine(args: argparse.Namespace, state_dir: Path) -> int:
     if key is None:
         print(f"{EVIDENCE_KEY_ENV} is not set: bundles are written unattested, and nothing is committed")
 
-    added, outcomes = await mine_once(
+    from ...ledger.chain import LedgerIntegrityError, LedgerUntrusted
+
+    try:
+        added, outcomes = await _mine_once(mine_once, args, state_dir, since, until, key)
+    except (LedgerUntrusted, LedgerIntegrityError) as exc:
+        print(f"refused: {exc}")
+        return 1
+    if not args.no_collect:
+        print(f"collected {added} new change(s) for {since.isoformat()} → {until.isoformat()}")
+    if not outcomes:
+        print("no eligible gaps")
+    for outcome in outcomes:
+        print(describe(outcome))
+    return 0
+
+
+async def _mine_once(mine_once, args, state_dir, since, until, key):  # type: ignore[no-untyped-def]
+    return await mine_once(
         state_dir,
         TimeWindow(start=since, end=until),
         collect=not args.no_collect,
@@ -74,13 +115,6 @@ async def _mine(args: argparse.Namespace, state_dir: Path) -> int:
         open_prs=args.open_pr,
         remote=args.remote,
     )
-    if not args.no_collect:
-        print(f"collected {added} new change(s) for {since.isoformat()} → {until.isoformat()}")
-    if not outcomes:
-        print("no eligible gaps")
-    for outcome in outcomes:
-        print(describe(outcome))
-    return 0
 
 
 def _lifecycle(state_dir: Path) -> int:

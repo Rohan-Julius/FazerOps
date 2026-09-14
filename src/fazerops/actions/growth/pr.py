@@ -44,6 +44,9 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict
 
+from ...config import EVIDENCE_KEY_ENV, evidence_key
+from ...ledger.chain import LedgerUntrusted, usable_as_evidence
+
 __all__ = [
     "AGENT_EMAIL",
     "AGENT_NAME",
@@ -65,7 +68,6 @@ CREDENTIALS_PATH = "src/fazerops/security/credentials.py"
 ACTIONS_PATH = "config/actions.yaml"
 GENERATED_DIR = "src/fazerops/actions/writers/generated/"
 EVIDENCE_DIR = "catalog-growth/evidence/"
-EVIDENCE_KEY_ENV = "FAZEROPS_EVIDENCE_KEY"
 
 
 class Rule(str, Enum):
@@ -109,10 +111,20 @@ class EvidenceCheck(BaseModel):
 
     cited: int
     unresolved: tuple[str, ...]
+    ledger_problem: str | None = None
 
     @property
     def passed(self) -> bool:
-        return self.cited > 0 and not self.unresolved
+        return self.cited > 0 and not self.unresolved and self.ledger_problem is None
+
+
+def ledger_problem(ledger: Any, *, key_configured: bool) -> str | None:
+    """Why `ledger` cannot vouch for evidence, or `None`. An event resolving in a ledger whose
+    chain is broken proves only that someone wrote it there."""
+    integrity = getattr(ledger, "integrity", None)
+    if integrity is None or usable_as_evidence(integrity, key_configured=key_configured):
+        return None
+    return f"the ledger is {integrity.value}: {ledger.integrity_detail}"
 
 
 def check_evidence(bundle: Path | str, ledger: Any) -> EvidenceCheck:
@@ -121,6 +133,7 @@ def check_evidence(bundle: Path | str, ledger: Any) -> EvidenceCheck:
     return EvidenceCheck(
         cited=len(cited),
         unresolved=tuple(event_id for event_id in cited if event_id not in ledger),
+        ledger_problem=ledger_problem(ledger, key_configured=evidence_key() is not None),
     )
 
 
@@ -147,6 +160,10 @@ def attest_bundle(bundle: Path | str, ledger: Any, *, key: bytes) -> Path:
     the digest of the exact module that was contained — so CI can reject a module that was never
     run in a sandbox, or one swapped after its run, without a cluster of its own.
     """
+    problem = ledger_problem(ledger, key_configured=True)
+    if problem is not None:
+        raise LedgerUntrusted(f"not signing evidence: {problem}")
+
     bundle = Path(bundle)
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     cited = sorted(str(event_id) for event_id in manifest.get("cited_event_ids") or [])
@@ -176,8 +193,7 @@ def verify_attestation(record: dict[str, Any], key: bytes) -> bool:
 
 
 def evidence_key_from_env() -> bytes | None:
-    value = os.environ.get(EVIDENCE_KEY_ENV)
-    return value.encode("utf-8") if value else None
+    return evidence_key()
 
 
 def commit_bundle(repo: Path | str, bundle: Path | str) -> str:
@@ -558,7 +574,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no ledger at {ledger_path}; evidence cannot be verified, so it is not accepted")
         return 1
     result = check_evidence(args.bundle, LedgerStore(ledger_path))
-    if not result.passed:
+    if result.ledger_problem is not None:
+        print(f"{result.ledger_problem}; evidence cannot be verified, so it is not accepted")
+    elif not result.passed:
         print(f"cited {result.cited}; unresolved: {', '.join(result.unresolved) or '(none cited)'}")
     return 0 if result.passed else 1
 

@@ -20,12 +20,16 @@ this; `tests/integration/test_layer_seam.py` holds them to it.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..ledger.chain import LedgerIntegrityError
 from ..ledger.store import LedgerStore
 from ..models import Alert, Brief
 from .approval import ApprovalGateway, ApprovalRefused, PendingApproval
@@ -36,6 +40,8 @@ from .growth.signals import GapSignalStore, outcome_observer
 __all__ = ["Automation", "DEFAULT_STATE_DIR", "Response", "STATE_DIR_ENV"]
 
 STATE_DIR_ENV = "FAZEROPS_STATE_DIR"
+
+logger = logging.getLogger(__name__)
 DEFAULT_STATE_DIR = Path(".fazerops")
 
 
@@ -108,7 +114,6 @@ class Automation:
             return self.proposer_node(state)
 
         brief, _ = await investigate_via_graph(alert, collectors=collectors, proposer_node=node)
-        self.ledger.extend(candidate.event for candidate in brief.candidates)
 
         state = states[0] if states else None
         response = Response(
@@ -116,6 +121,12 @@ class Automation:
             proposal=getattr(state, "proposal", None),
             one_shot=getattr(state, "one_shot", None),
         )
+        try:
+            self.ledger.extend(candidate.event for candidate in brief.candidates)
+        except LedgerIntegrityError as exc:
+            # The brief is Tier 0 and still posts. A ledger that cannot be appended to honestly
+            # (signed, and this process lacks the key) is refused loudly, not silently unsigned.
+            response.refused.append(f"not recorded in the ledger: {exc}")
         evidence = Evidence.from_brief(brief)
 
         if response.proposal is not None:
@@ -141,6 +152,38 @@ class Automation:
                 response.refused.append(str(exc))
 
         return response
+
+    async def follow_coverage(
+        self,
+        brief: Brief,
+        on_update: Callable[[Any], Any],
+        *,
+        collectors: list[Any] | None = None,
+        poll_seconds: float | None = None,
+        sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
+        now: Callable[[], datetime] | None = None,
+    ) -> Brief:
+        """Follow the brief's open coverage gaps to their close (`coverage.watch_coverage`),
+        recording every late change in the durable ledger and handing each update to `on_update`.
+
+        The brief was already posted; nothing here holds it. Returns the last brief — the one it
+        started with when nothing changed.
+        """
+        from ..coverage import POLL_SECONDS, watch_coverage
+
+        latest = brief
+        async for update in watch_coverage(
+            brief, collectors=collectors, poll_seconds=poll_seconds or POLL_SECONDS, sleep=sleep, now=now
+        ):
+            if update.late_event_ids:
+                late = set(update.late_event_ids)
+                try:
+                    self.ledger.extend(c.event for c in update.brief.candidates if c.event.id in late)
+                except LedgerIntegrityError:
+                    logger.exception("late changes for %s were not recorded in the ledger", brief.incident_id)
+            on_update(update)
+            latest = update.brief
+        return latest
 
 
 def _request_for(proposal: Any, brief: Brief) -> Any:

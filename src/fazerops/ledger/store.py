@@ -25,13 +25,16 @@ evidence, and because a crashed write costs the last line rather than the file.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable
 from pathlib import Path
 
+from ..config import evidence_key
 from ..models import Alert, AlertClass, BlastRadius, ChangeEvent, TimeWindow
+from .chain import ChainedLog, Integrity, worst
 
 DEFAULT_LEDGER_PATH = Path(".fazerops") / "ledger.jsonl"
+
+_FROM_ENV = object()
 
 
 class LedgerStore:
@@ -42,16 +45,28 @@ class LedgerStore:
     from surviving the process.
     """
 
-    def __init__(self, path: Path | str | None = None) -> None:
+    def __init__(self, path: Path | str | None = None, *, key: bytes | None | object = _FROM_ENV) -> None:
+        """`key` signs and verifies the file's chain (`chain.py`); by default it is
+        `FAZEROPS_EVIDENCE_KEY`. An in-memory ledger has no file and ignores it."""
         self._path = Path(path) if path is not None else None
+        self._key: bytes | None = evidence_key() if key is _FROM_ENV else key  # type: ignore[assignment]
         self._events: dict[str, ChangeEvent] = {}
         self._by_key: dict[str, set[str]] = {}
         self._alerts: dict[str, Alert] = {}
+        self._integrity: tuple[Integrity, str | None] = (Integrity.IN_MEMORY, None)
 
-        if self._path is not None and self._path.exists():
-            self._load()
-        if self._alerts_path is not None and self._alerts_path.exists():
-            self._load_alerts()
+        if self._path is not None:
+            self._integrity = worst(self._load(), self._load_alerts())
+
+    @property
+    def integrity(self) -> Integrity:
+        """What the files on disk could vouch for when this store opened them. Appends made
+        through this store keep the chain intact, so they do not change it."""
+        return self._integrity[0]
+
+    @property
+    def integrity_detail(self) -> str | None:
+        return self._integrity[1]
 
     @property
     def _alerts_path(self) -> Path | None:
@@ -112,9 +127,7 @@ class LedgerStore:
         self._alerts[alert.id] = alert
 
         if self._alerts_path is not None and first_time:
-            self._alerts_path.parent.mkdir(parents=True, exist_ok=True)
-            with self._alerts_path.open("a", encoding="utf-8") as handle:
-                handle.write(alert.model_dump_json() + "\n")
+            ChainedLog(self._alerts_path, self._key).append([alert.model_dump(mode="json")])
 
     # ----------------------------------------------------------------------------------
     # Reading
@@ -187,48 +200,42 @@ class LedgerStore:
 
     def _append(self, events: list[ChangeEvent]) -> None:
         assert self._path is not None
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._path.open("a", encoding="utf-8") as handle:
-            for event in events:
-                handle.write(event.model_dump_json() + "\n")
+        ChainedLog(self._path, self._key).append([event.model_dump(mode="json") for event in events])
 
-    def _load(self) -> None:
+    def _load(self) -> tuple[Integrity, str | None]:
         """Replay the file. Later lines win, which is what makes `record` idempotent across
         restarts as well as within a process.
 
         A truncated final line — the shape a crash mid-append leaves — is dropped rather
         than raised on. Refusing to open a ledger because its last write was interrupted
-        would lose the whole history to protect one event.
+        would lose the whole history to protect one event. Anything else wrong with the file
+        is not refused either: the events still load, and `integrity` says the file is not
+        evidence — the reader decides what that costs (the growth job refuses to mine it).
         """
         assert self._path is not None
-        with self._path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    event = ChangeEvent.model_validate_json(line)
-                except (ValueError, json.JSONDecodeError):
-                    continue
-                self._deindex(event.id)
-                self._events[event.id] = event
-                for key in event.blast_radius_keys:
-                    self._by_key.setdefault(key, set()).add(event.id)
+        records, *state = ChainedLog(self._path, self._key).read()
+        for record in records:
+            try:
+                event = ChangeEvent.model_validate(record)
+            except ValueError:
+                continue
+            self._deindex(event.id)
+            self._events[event.id] = event
+            for key in event.blast_radius_keys:
+                self._by_key.setdefault(key, set()).add(event.id)
+        return state[0], state[1]
 
-    def _load_alerts(self) -> None:
-        """Replay the alert history. Same tolerance for a truncated final line as `_load`,
-        and for the same reason."""
+    def _load_alerts(self) -> tuple[Integrity, str | None]:
+        """Replay the alert history. Its own chain, with the same tolerances as `_load`."""
         assert self._alerts_path is not None
-        with self._alerts_path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    alert = Alert.model_validate_json(line)
-                except (ValueError, json.JSONDecodeError):
-                    continue
-                self._alerts[alert.id] = alert
+        records, *state = ChainedLog(self._alerts_path, self._key).read()
+        for record in records:
+            try:
+                alert = Alert.model_validate(record)
+            except ValueError:
+                continue
+            self._alerts[alert.id] = alert
+        return state[0], state[1]
 
     def _deindex(self, event_id: str) -> None:
         existing = self._events.get(event_id)

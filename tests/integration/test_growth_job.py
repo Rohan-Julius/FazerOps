@@ -100,9 +100,11 @@ async def test_collection_fills_the_durable_ledger_from_every_service_radius(mon
 
 def test_the_cli_runs_the_job_against_a_state_directory(tmp_path, monkeypatch, capsys):
     ledger, store, _ = gap_with_corpus(store_path=tmp_path / "gap_signals.jsonl")
+    # The key before the ledger: a ledger started without it stays unsigned, and the job then
+    # refuses to mine it where a key exists (`ledger/chain.py`).
+    monkeypatch.setenv(EVIDENCE_KEY_ENV, KEY.decode())
     durable = LedgerStore(tmp_path / "ledger.jsonl")
     durable.extend(ledger._events.values())
-    monkeypatch.setenv(EVIDENCE_KEY_ENV, KEY.decode())
 
     code = main(
         [
@@ -202,8 +204,8 @@ def test_the_cli_commits_attested_bundles(tmp_path, monkeypatch, capsys):
     repo = _repo(tmp_path)
     state = tmp_path / "state"
     ledger, _, _ = gap_with_corpus(store_path=state / "gap_signals.jsonl")
-    LedgerStore(state / "ledger.jsonl").extend(ledger._events.values())
     monkeypatch.setenv(EVIDENCE_KEY_ENV, KEY.decode())
+    LedgerStore(state / "ledger.jsonl").extend(ledger._events.values())
 
     code = main(
         [

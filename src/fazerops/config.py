@@ -75,6 +75,17 @@ class GeminiThinking(str, Enum):
 
 OFFLINE_LLM_MODES = frozenset({LlmMode.STUB, LlmMode.CASSETTE})
 
+# The ledger's authority. It signs the ledger's own hash chain (`ledger/chain.py`) and the PR
+# evidence taken from it (`actions/growth/pr.py`), and CI holds the same value as a secret. It
+# lives here rather than in `pr.py` because the ledger is investigation layer and must not
+# import the automation layer to find its own key.
+EVIDENCE_KEY_ENV = "FAZEROPS_EVIDENCE_KEY"
+
+
+def evidence_key() -> bytes | None:
+    value = os.environ.get(EVIDENCE_KEY_ENV)
+    return value.encode("utf-8") if value else None
+
 # One variable per agent rather than one for all three: the split in `agents/llm.py` is
 # deliberate, and a single override would quietly collapse it.
 GEMINI_MODEL_ENV = {
