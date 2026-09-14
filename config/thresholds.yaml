@@ -9,6 +9,15 @@
 # asserts the one-way property directly rather than trusting the rules below to be written
 # correctly.
 
+# Not a promotion rule, and kept out of `promote_to_tier_2` so that section stays expressible
+# as "only ever raises the bar".
+approval:
+  # An open approval card refuses a click after this long. Preconditions are checked against
+  # the evidence the investigation collected, never against the live cluster
+  # (`actions/preconditions.py`), so an approval clicked hours later would execute against
+  # evidence that old. Refusing records no outcome: re-investigating opens a fresh card.
+  expires_after_seconds: 1800
+
 promote_to_tier_2:
   # Handoff §7's three named conditions.
 

@@ -1,0 +1,25 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AssumeOnlyWithAnApproverAsSourceIdentity",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::ACCOUNT_ID:root" },
+      "Action": ["sts:AssumeRole", "sts:SetSourceIdentity"],
+      "Condition": {
+        "StringLike": { "sts:SourceIdentity": "slack-*" }
+      }
+    },
+    {
+      "Sid": "TagSessionsWithTheIncidentActionAndApproverOnly",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::ACCOUNT_ID:root" },
+      "Action": "sts:TagSession",
+      "Condition": {
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": ["fazerops:incident", "fazerops:action", "fazerops:approver"]
+        }
+      }
+    }
+  ]
+}

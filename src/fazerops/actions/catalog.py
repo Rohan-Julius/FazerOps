@@ -180,12 +180,23 @@ class Thresholds(BaseModel):
     crosses_namespace_boundary: bool = False
 
 
+class ApprovalPolicy(BaseModel):
+    """`thresholds.yaml`'s `approval:` section — how long an open card stays approvable."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    expires_after_seconds: float | None = Field(default=1800, gt=0)
+
+
 class Catalog:
     """Loaded `actions.yaml`, with the lookups the automation layer needs."""
 
-    def __init__(self, actions: list[ActionSpec], thresholds: Thresholds) -> None:
+    def __init__(
+        self, actions: list[ActionSpec], thresholds: Thresholds, approval: ApprovalPolicy | None = None
+    ) -> None:
         self._actions = {action.id: action for action in actions}
         self.thresholds = thresholds
+        self.approval = approval if approval is not None else ApprovalPolicy()
         if len(self._actions) != len(actions):
             raise ValueError("duplicate action id in the catalog")
 
@@ -200,8 +211,9 @@ class Catalog:
             Path(thresholds_path or DEFAULT_THRESHOLDS).read_text(encoding="utf-8")
         )
         thresholds = Thresholds.model_validate((raw_thresholds or {}).get("promote_to_tier_2") or {})
+        approval = ApprovalPolicy.model_validate((raw_thresholds or {}).get("approval") or {})
 
-        catalog = cls(actions, thresholds)
+        catalog = cls(actions, thresholds, approval)
         # Resolve every executor at load time. Deferring it to execution would move the
         # failure from "the catalog is wrong" at startup to an ImportError mid-demo, with a
         # human already waiting on an approval card.

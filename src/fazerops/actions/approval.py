@@ -39,13 +39,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..models import Tier
 from ..record.session import ApprovalRecord, ExecutionRecord
-from ..security.credentials import mint_actor_credential
+from ..security.credentials import mint_actor_credential, requires_aws
 from .catalog import Catalog, default_catalog, promote
 from .dry_run import DryRun
 from .inverse import ActionRequest
 
 __all__ = [
     "AlreadyDecided",
+    "ApprovalExpired",
     "ApprovalGateway",
     "ApprovalRefused",
     "Approver",
@@ -54,6 +55,7 @@ __all__ = [
     "NotAwaitingApproval",
     "Outcome",
     "PendingApproval",
+    "StaleCard",
     "scope_of",
 ]
 
@@ -93,6 +95,24 @@ class AlreadyDecided(ApprovalRefused):
             f"by {outcome.approver}; Handoff §7 executes once per (incident, action)."
         )
         self.outcome = outcome
+
+
+class StaleCard(ApprovalRefused):
+    """The clicked card showed a different dry run from the one this module now holds.
+
+    A re-registration for the same `(incident, action)` replaces the pending entry — newer
+    evidence wins — and the older card must not approve the newer diff (drift log, 14 Sep, D1).
+    **Records no outcome**, like `ApproverNotPermitted`: the current card stays approvable.
+    """
+
+
+class ApprovalExpired(ApprovalRefused):
+    """The card has been open longer than `thresholds.yaml`'s `approval.expires_after_seconds`.
+
+    Preconditions are evaluated against the evidence the investigation collected, never the live
+    cluster, so a late approval would execute against stale evidence. **Records no outcome**:
+    re-investigating opens a fresh card for the same key.
+    """
 
 
 class ApproverRole(str, Enum):
@@ -158,10 +178,18 @@ class PendingApproval(BaseModel):
         "(W40), never to decide what executes.",
     )
     registered_at: float = Field(default_factory=time.time)
+    expires_at: float | None = Field(
+        default=None, description="Epoch seconds after which `decide()` refuses; `None` never expires."
+    )
 
     @property
     def action_id(self) -> str:
         return self.request.action_id
+
+    @property
+    def digest(self) -> str:
+        """The dry run's digest — what the card carries and `decide()` compares."""
+        return self.dry_run.digest
 
     @property
     def key(self) -> tuple[str, str]:
@@ -280,8 +308,10 @@ class ApprovalGateway:
         role_arn: str | None = None,
         observer: OutcomeObserver | None = None,
         graduation: Callable[[str], tuple[int, int]] | None = None,
+        clock: Callable[[], float] | None = None,
     ) -> None:
         self._catalog = catalog if catalog is not None else default_catalog()
+        self._clock = clock if clock is not None else time.time
         self._runner = runner if runner is not None else _default_runner
         self._sts_client = sts_client
         self._role_arn = role_arn
@@ -329,12 +359,22 @@ class ApprovalGateway:
                 f"{request.action_id} is Tier 0 (read-only) and has nothing to approve; "
                 "Tier 0 is autonomous by definition (ground rule #5)."
             )
+        if requires_aws(request.action_id) and self._runner is _default_runner and self._sts_client is None and self._role_arn is None:
+            # Refused before a card exists rather than after a click. The executor refuses too, but by
+            # then the approval is spent; a card that can only fail should never reach a human.
+            raise ApprovalRefused(
+                f"{request.action_id} calls AWS and no actor role is configured (FAZEROPS_ACTOR_ROLE_ARN), "
+                "so it could only run as this process's own AWS identity. No card was opened."
+            )
 
+        registered_at = self._clock()
         pending = PendingApproval(
             incident_id=incident_id,
             request=request,
             declared_tier=spec.tier,
             tier=tier,
+            registered_at=registered_at,
+            expires_at=self._expiry(registered_at),
             escalation_reason=reason,
             dry_run=request.dry_run(evidence=evidence, catalog=self._catalog),
             evidence=evidence,
@@ -346,13 +386,7 @@ class ApprovalGateway:
                 else None
             ),
         )
-        # Re-registering an incident/action that has already been decided would post a fresh
-        # card for a mutation that already ran. The idempotency table is the authority.
-        if pending.key in self._outcomes:
-            raise AlreadyDecided(self._outcomes[pending.key])
-
-        self._pending[pending.key] = pending
-        return pending
+        return self._open(pending)
 
     def register_one_shot(
         self,
@@ -392,20 +426,20 @@ class ApprovalGateway:
         with one_shot.context():
             dry_run = request.dry_run(evidence=evidence, catalog=catalog)
 
+        registered_at = self._clock()
         pending = PendingApproval(
             incident_id=one_shot.key.incident_id,
             request=request,
             declared_tier=spec.tier,
             tier=spec.tier,
+            registered_at=registered_at,
+            expires_at=self._expiry(registered_at),
             dry_run=dry_run,
             evidence=evidence,
             evidence_ids=tuple(evidence_ids),
             one_shot=one_shot,
         )
-        if pending.key in self._outcomes:
-            raise AlreadyDecided(self._outcomes[pending.key])
-        self._pending[pending.key] = pending
-        return pending
+        return self._open(pending)
 
     def pending(self, incident_id: str, action_id: str) -> PendingApproval:
         try:
@@ -420,6 +454,16 @@ class ApprovalGateway:
     def outcome(self, incident_id: str, action_id: str) -> Outcome | None:
         return self._outcomes.get((incident_id, action_id))
 
+    def open_cards(self, incident_id: str) -> list[PendingApproval]:
+        """Every undecided card for one incident — for `/fazerops status`, which only reads."""
+        return [pending for key, pending in self._pending.items() if key[0] == incident_id]
+
+    def outcomes_for(self, incident_id: str) -> list[Outcome]:
+        return [outcome for key, outcome in self._outcomes.items() if key[0] == incident_id]
+
+    def is_expired(self, pending: PendingApproval) -> bool:
+        return self._expired(pending)
+
     # -- decision ----------------------------------------------------------------------
 
     def decide(
@@ -429,6 +473,7 @@ class ApprovalGateway:
         action_id: str,
         approver: Approver,
         kind: Literal["approve", "reject"],
+        dry_run_digest: str | None = None,
     ) -> Outcome:
         """Route one human decision, and execute at most once.
 
@@ -437,6 +482,13 @@ class ApprovalGateway:
         approver, the roster or the thresholds changed between the two clicks. The role
         check then runs **before** minting, so a refused approver never causes a credential
         to exist at all.
+
+        `dry_run_digest` is what the clicked card carried. The Slack sink always passes it
+        (`parse_decision` refuses an Approve or Reject without one); `None` is for an in-process
+        caller holding the `PendingApproval` itself, which cannot have seen a stale card. The
+        digest and expiry checks run after the replay check — a replay answers with the first
+        outcome whatever card it came from — and before either decision is recorded, so a stale
+        or expired click changes nothing.
         """
         key = (incident_id, action_id)
 
@@ -447,6 +499,18 @@ class ApprovalGateway:
             return decided.model_copy(update={"replay": True})
 
         pending = self.pending(incident_id, action_id)
+
+        if dry_run_digest is not None and dry_run_digest != pending.digest:
+            raise StaleCard(
+                f"this card shows an older dry run for {action_id} on {incident_id}; a newer card "
+                "replaced it. Nothing was recorded — decide on the newest card."
+            )
+        if self._expired(pending):
+            raise ApprovalExpired(
+                f"the approval for {action_id} on {incident_id} expired "
+                f"{self._clock() - (pending.expires_at or 0):.0f}s ago; its evidence is too old to act "
+                "on. Nothing was recorded — re-investigate to open a fresh card."
+            )
 
         if kind == "reject":
             return self._record(pending, approver, decision="rejected")
@@ -478,6 +542,7 @@ class ApprovalGateway:
             namespace=pending.scope,
             sts_client=self._sts_client,
             role_arn=self._role_arn,
+            approver=approver.user_id,
         )
 
         try:
@@ -493,6 +558,31 @@ class ApprovalGateway:
         return self._record(pending, approver, decision="approved", result=result)
 
     # -- internals ---------------------------------------------------------------------
+
+    def _open(self, pending: PendingApproval) -> PendingApproval:
+        """Put a card in the table, or say why not.
+
+        Re-registering a pair that has already been decided would post a fresh card for a
+        mutation that already ran, so the idempotency table is checked first. An identical,
+        unexpired dry run is the same card and is returned as it is. A *different* one replaces
+        the entry: the newer evidence is what a human should decide on, and the older card's
+        digest no longer matches, so `decide()` refuses it as `StaleCard` instead of executing a
+        diff nobody read on it.
+        """
+        if pending.key in self._outcomes:
+            raise AlreadyDecided(self._outcomes[pending.key])
+        open_card = self._pending.get(pending.key)
+        if open_card is not None and open_card.digest == pending.digest and not self._expired(open_card):
+            return open_card
+        self._pending[pending.key] = pending
+        return pending
+
+    def _expiry(self, registered_at: float) -> float | None:
+        limit = self._catalog.approval.expires_after_seconds
+        return None if limit is None else registered_at + limit
+
+    def _expired(self, pending: PendingApproval) -> bool:
+        return pending.expires_at is not None and self._clock() >= pending.expires_at
 
     def _run(self, pending: PendingApproval, credential: Any) -> dict[str, Any]:
         if pending.one_shot is None:

@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...security.credentials import require_actor_credential
+from ...security.credentials import CredentialRefused, require_actor_credential
 
 __all__ = ["restore_parameter"]
 
@@ -116,6 +116,16 @@ def _value_after(client: Any, *, parameter_group: str, parameter: str) -> str | 
 
 
 def _rds_client(credential: Any) -> Any:
+    # Fail closed. This used to fall back to the ambient boto3 identity when the credential carried
+    # no STS keys, which ran a Tier 2 mutation as the automation host rather than as the approved,
+    # session-policy-scoped principal (14 Sep). The gateway refuses such a card before it opens;
+    # this is the second barrier.
+    if not getattr(credential, "access_key_id", ""):
+        raise CredentialRefused(
+            "restore_db_parameter needs an STS-backed actor credential; none was minted because "
+            "FAZEROPS_ACTOR_ROLE_ARN is not set. Refusing to run as this process's own AWS identity."
+        )
+
     from ...config import require_offline_capable
 
     require_offline_capable("restore_db_parameter")
@@ -130,6 +140,4 @@ def _rds_client(credential: Any) -> Any:
     # A credential minted without STS carries empty keys (`mint_actor_credential`); there is
     # nothing to scope the client with, so the ambient identity is used and the scoping rests
     # on `require_actor_credential` above. `session_policy` documents the same split.
-    if not keys["aws_access_key_id"]:
-        return boto3.client("rds", region_name="us-east-1")
     return boto3.client("rds", region_name="us-east-1", **keys)

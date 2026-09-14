@@ -80,6 +80,21 @@ class DryRun(BaseModel):
     )
     notes: list[str] = Field(default_factory=list)
 
+    @property
+    def digest(self) -> str:
+        """A short hash of everything a human reads on the card.
+
+        The approval card carries it and `ApprovalGateway.decide` compares it against the dry
+        run it holds, so a click can only approve the diff it was shown. Before this, a
+        re-registration for the same `(incident, action)` replaced the pending entry in place
+        and a click on the older card executed the newer dry run (drift log, 14 Sep, D1).
+        Computed from the raw fields, not the rendered text, for `DiffLine.changed`'s reason:
+        two different redacted values render identically.
+        """
+        import hashlib
+
+        return hashlib.sha256(self.model_dump_json().encode("utf-8")).hexdigest()[:16]
+
     def render(self) -> str:
         """Plain text, for stdout and for the markdown record. Slack's Block Kit version is
         W25's; both read the same `DryRun`, so the two surfaces cannot disagree."""

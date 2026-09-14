@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RestoreOneTaggedParameterGroup",
+      "Effect": "Allow",
+      "Action": ["rds:ModifyDBParameterGroup", "rds:DescribeDBParameters"],
+      "Resource": "arn:aws:rds:us-east-1:ACCOUNT_ID:pg:*",
+      "Condition": {
+        "StringLike": { "aws:ResourceTag/fazerops:namespace": "*" }
+      }
+    }
+  ]
+}
