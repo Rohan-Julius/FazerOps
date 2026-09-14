@@ -318,3 +318,36 @@ async def test_the_proposer_node_offers_a_one_shot_after_a_decline_and_only_then
         proposer_node=functools.partial(proposer_module.proposer_node, one_shots=quiet),
     )
     assert quiet._outcomes == {}, "a proposal is not a decline; nothing is offered"
+
+
+# --------------------------------------------------------------------------------------
+# The writer is paid for by the run that offered it
+# --------------------------------------------------------------------------------------
+
+
+def _metered_author(seen: list):
+    async def author(contract, **kwargs):
+        seen.append(kwargs.get("meter"))
+        return writer_author.AuthoredWriter(**writer_author._stub(contract), model="stub")
+
+    return author
+
+
+async def test_the_writer_is_authored_on_the_offering_runs_meter():
+    """A `TokenMeter` is one per run, so the server's book holds none; without the run's, the
+    writer authored in an incident was the one model call missing from the token ledger."""
+    seen: list = []
+    run_meter = object()
+
+    await _book(_metered_author(seen)).offer(BINARY, meter=run_meter)
+
+    assert seen == [run_meter]
+
+
+async def test_without_a_run_meter_the_books_own_is_used():
+    seen: list = []
+    book_meter = object()
+
+    await _book(_metered_author(seen), meter=book_meter).offer(BINARY)
+
+    assert seen == [book_meter]

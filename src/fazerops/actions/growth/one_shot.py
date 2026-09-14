@@ -177,8 +177,13 @@ class OneShotBook:
     def get(self, key: OneShotKey) -> OneShotOutcome | None:
         return self._outcomes.get(key)
 
-    async def offer(self, brief: Brief) -> OneShotOutcome:
-        """§4 steps 2–5 for a brief whose proposal was `"none"`. The caller establishes that."""
+    async def offer(self, brief: Brief, *, meter: Any | None = None) -> OneShotOutcome:
+        """§4 steps 2–5 for a brief whose proposal was `"none"`. The caller establishes that.
+
+        `meter` is the offering investigation's own. A `TokenMeter` is one per run with per-run caps,
+        so the book cannot hold one for the life of the server; without it, the writer authored
+        here was the only model call on the server path missing from the token ledger (W31, 14 Sep).
+        """
         from ..catalog import default_catalog
         from ..writers.registry import request_for_event
 
@@ -200,11 +205,11 @@ class OneShotBook:
             if request_for_event(event, catalog) is not None:
                 outcome = OneShotOutcome(key=key, refusal=Refusal.CATALOG_CAN_REVERT)
             else:
-                outcome = await self._build(brief, key, catalog)
+                outcome = await self._build(brief, key, catalog, meter=meter if meter is not None else self._meter)
             self._outcomes[key] = outcome
             return outcome
 
-    async def _build(self, brief: Brief, key: OneShotKey, catalog: Catalog) -> OneShotOutcome:
+    async def _build(self, brief: Brief, key: OneShotKey, catalog: Catalog, *, meter: Any | None = None) -> OneShotOutcome:
         from ..catalog import ActionSpec, Catalog, UnknownAction, ValidationRejected
         from ..inverse import ActionRequest
         from ..writers.k8s_support import has_contract, writer_contract
@@ -237,7 +242,7 @@ class OneShotBook:
             if author is None:
                 from ...agents.writer_author import author_writer as author
             authored = await author(
-                writer_contract(kind, field), meter=self._meter, cassette_directory=self._cassette_directory
+                writer_contract(kind, field), meter=meter, cassette_directory=self._cassette_directory
             )
             problems = accept_authored(kind, field, authored.read_source, authored.write_source)
             if problems:
