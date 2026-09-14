@@ -70,7 +70,12 @@ NODE_TIMEOUT_SECONDS = 30.0
 # absorbs it like any other failure. The graph's remains set, at this multiple, for the case
 # the inner one cannot cover: work that never yields to the event loop and so cannot be
 # cancelled by `asyncio.wait_for`.
-GRAPH_TIMEOUT_MULTIPLE = 2.0
+#
+# **It is also the only bound on a live orchestrator**, which is a bare `Agent` with no inner
+# timeout. At 2.0 (60 s) a slow Gemini two-turn loop tripped it on 14 Sep and the whole
+# investigation failed with no brief. Raised rather than wrapping the Agent (user decision,
+# 14 Sep); a model call slower than this still fails the graph.
+GRAPH_TIMEOUT_MULTIPLE = 4.0
 
 COLLECTOR_NODES = ("cloudtrail", "k8s_audit", "helm", "github")
 
