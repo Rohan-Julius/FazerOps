@@ -57,7 +57,7 @@ def write(
 ) -> dict[str, Any]:
     """Patch the recorded keys. Returns key *names* only — never values, for the reason
     `slack/handlers.approval_sink` gives about the redacted value printed back out."""
-    client = client if client is not None else _core_v1()
+    client = client if client is not None else _core_v1(credential)
     patched = client.patch_namespaced_config_map(
         name=params["name"], namespace=params["namespace"], body={"data": dict(values)}
     )
@@ -69,16 +69,17 @@ def write(
     }
 
 
-def _core_v1() -> Any:
+def _core_v1(credential: Any = None) -> Any:
     from ...config import require_offline_capable
 
     require_offline_capable("k8s/ConfigMap:data")
 
     from kubernetes import client as k8s_client
-    from kubernetes import config as k8s_config
 
-    k8s_config.load_kube_config()
-    return k8s_client.CoreV1Api()
+    from ..k8s_client import api_client
+
+    # Impersonates the approver when writing, so the audit log names them (drift log, 14 Sep, D3).
+    return k8s_client.CoreV1Api(api_client(credential))
 
 
 WRITER = WriterSpec(

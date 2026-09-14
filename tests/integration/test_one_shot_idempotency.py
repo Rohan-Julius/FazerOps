@@ -74,8 +74,8 @@ class FakeCoreV1:
 @pytest.fixture
 def cluster(monkeypatch):
     fake = FakeCoreV1()
-    monkeypatch.setattr(k8s_configmap, "_core_v1", lambda: fake)
-    monkeypatch.setattr(k8s_support, "api_for", lambda kind: fake)
+    monkeypatch.setattr(k8s_configmap, "_core_v1", lambda credential=None: fake)
+    monkeypatch.setattr(k8s_support, "api_for", lambda kind, credential=None: fake)
     return fake
 
 

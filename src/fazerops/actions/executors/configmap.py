@@ -71,7 +71,7 @@ def revert_key(
             )
         keys, prior, _ = found
         require_actor_credential(credential, action_id="revert_configmap_key", namespace=namespace)
-        client = client if client is not None else _core_v1()
+        client = client if client is not None else _core_v1(credential)
         patched = client.patch_namespaced_config_map(
             name=name, namespace=namespace, body={"data": {k: prior[k] for k in keys}}
         )
@@ -94,7 +94,7 @@ def revert_key(
         credential, action_id="revert_configmap_key", namespace=namespace
     )
 
-    client = client if client is not None else _core_v1()
+    client = client if client is not None else _core_v1(credential)
 
     # Strategic merge of exactly one key — see the module docstring on why not a replace.
     patched = client.patch_namespaced_config_map(
@@ -112,8 +112,8 @@ def revert_key(
     }
 
 
-def _core_v1() -> Any:
-    """A Kubernetes client from the ambient kubeconfig.
+def _core_v1(credential: Any = None) -> Any:
+    """A Kubernetes client from the ambient kubeconfig, impersonating the approver.
 
     Built here rather than at module scope for the reason `config.require_offline_capable`
     exists: a client constructed at import reaches for a config file and then for a cluster,
@@ -125,7 +125,7 @@ def _core_v1() -> Any:
     require_offline_capable("revert_configmap_key")
 
     from kubernetes import client as k8s_client
-    from kubernetes import config as k8s_config
 
-    k8s_config.load_kube_config()
-    return k8s_client.CoreV1Api()
+    from ..k8s_client import api_client
+
+    return k8s_client.CoreV1Api(api_client(credential))

@@ -79,7 +79,7 @@ def cluster(monkeypatch):
             patches.append((namespace, name, body))
             return SimpleNamespace(data=body["data"], metadata=SimpleNamespace(resource_version="9"))
 
-    monkeypatch.setattr(configmap_executor, "_core_v1", lambda: FakeCoreV1())
+    monkeypatch.setattr(configmap_executor, "_core_v1", lambda credential=None: FakeCoreV1())
     return patches
 
 

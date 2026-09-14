@@ -69,6 +69,7 @@ def rollback(
     require_actor_credential(credential, action_id="helm_rollback", namespace=namespace)
 
     runner = runner if runner is not None else _run
+    identity = _impersonation(credential)
 
     runner(
         [
@@ -81,10 +82,11 @@ def rollback(
             str(target_revision),
             "--namespace",
             namespace,
+            *identity,
         ]
     )
 
-    landed = _revision_after(runner, release=release, namespace=namespace)
+    landed = _revision_after(runner, release=release, namespace=namespace, identity=identity)
 
     return {
         "action_id": "helm_rollback",
@@ -100,7 +102,18 @@ def rollback(
     }
 
 
-def _revision_after(runner: Any, *, release: str, namespace: str) -> int | None:
+def _impersonation(credential: Any) -> list[str]:
+    """`--kube-as-user`/`--kube-as-group`, so the audit log attributes the rollback to the approver
+    rather than to the kubeconfig's admin (drift log, 14 Sep, D3)."""
+    from ...security.credentials import kubernetes_identity
+
+    user, groups = kubernetes_identity(credential)
+    return ["--kube-as-user", user, *(flag for group in groups for flag in ("--kube-as-group", group))]
+
+
+def _revision_after(
+    runner: Any, *, release: str, namespace: str, identity: list[str] | None = None
+) -> int | None:
     """The revision Helm landed on, or `None` if it cannot be read.
 
     `None` rather than a raise: the mutation has already happened by this point, and
@@ -109,7 +122,7 @@ def _revision_after(runner: Any, *, release: str, namespace: str) -> int | None:
     """
     try:
         status = runner(
-            [HELM_BIN, "status", release, "--namespace", namespace, "-o", "json"]
+            [HELM_BIN, "status", release, "--namespace", namespace, "-o", "json", *(identity or [])]
         )
         return json.loads(status or "{}").get("version")
     except Exception:

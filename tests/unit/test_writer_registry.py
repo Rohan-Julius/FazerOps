@@ -93,7 +93,7 @@ def cluster(monkeypatch):
             return SimpleNamespace(data=body["data"], metadata=SimpleNamespace(resource_version="7"))
 
     fake = FakeCoreV1()
-    monkeypatch.setattr(k8s_configmap, "_core_v1", lambda: fake)
+    monkeypatch.setattr(k8s_configmap, "_core_v1", lambda credential=None: fake)
     return fake
 
 

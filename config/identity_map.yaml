@@ -53,3 +53,7 @@ identities:
 # out-of-band is circular. This list decides what gets *reported* as in-band, nothing more.
 in_band_principals:
   - ci-deployer
+  # Changes FazerOps executed after a human approved them. Not in `identities:` because the
+  # approver is part of the principal (`fazerops:approved-by:<slack id>`), so `normalize.py`
+  # recognises the shape. In-band because it arrived through the approval path, not around it.
+  - fazerops

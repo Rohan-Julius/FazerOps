@@ -227,7 +227,7 @@ def _read(params, *, client=None):
 
 def _write(params, values, *, credential=None, client=None):
     return write(
-        params, values, credential=credential, client=client if client is not None else api_for(KIND)
+        params, values, credential=credential, client=client if client is not None else api_for(KIND, credential)
     )
 
 
@@ -598,7 +598,8 @@ def generated_writer_spec(kind: str, field: str, read_source: str, write_source:
             write_source,
             dict(params),
             dict(values),
-            client=client if client is not None else api_for(kind),
+            # The approver's identity, so the audit log names who approved this one-shot (D3).
+            client=client if client is not None else api_for(kind, credential),
             pin=(str(params["namespace"]), str(params["name"])),
         )
 

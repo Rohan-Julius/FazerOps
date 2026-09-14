@@ -80,6 +80,10 @@ if [ ! -s "$AUDIT_DIR/audit.log" ]; then
   exit 1
 fi
 
+# D3 (drift log, 14 Sep): an approved execution impersonates the approver into this group, so the
+# audit log names who approved it instead of recording every revert as the kubeconfig's admin.
+kubectl --context "k3d-$CLUSTER" apply -f "$REPO_ROOT/config/k8s/fazerops-actor-rbac.yaml"
+
 # billing-api ships through Helm (W11): the Helm collector needs a real release to read a
 # history from, and W20b's rollback needs a real revision N-1 to roll back to. auth-service
 # stays a plain manifest — one release is enough to exercise the collector, and Handoff §5

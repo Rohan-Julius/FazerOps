@@ -49,10 +49,13 @@ __all__ = [
     "ActorCredential",
     "CredentialRefused",
     "MINTING_MODULES",
+    "KUBERNETES_ACTOR_GROUP",
     "SESSION_TTL_SECONDS",
     "ReaderCredential",
     "mint_actor_credential",
     "reader_credential",
+    "requires_aws",
+    "kubernetes_identity",
     "require_actor_credential",
     "session_policy",
 ]
@@ -60,6 +63,11 @@ __all__ = [
 # Handoff §8: TTL 900s. A constant rather than a parameter — an argument would mean a call
 # site could ask for eight hours, and the one that did would be the one nobody reviewed.
 SESSION_TTL_SECONDS = 900
+
+# The group a FazerOps execution impersonates into. `setup_k3d.sh` binds it to exactly the
+# permissions the three catalog actions need, so an approved action runs with those rather
+# than with whatever the ambient kubeconfig happens to be.
+KUBERNETES_ACTOR_GROUP = "fazerops:actors"
 
 # The only modules permitted to mint. Checked against the calling frame, so importing
 # `mint_actor_credential` elsewhere yields a function that raises when called.
@@ -123,6 +131,7 @@ class ActorCredential:
     action_id: str
     namespace: str
     expires_at: float
+    approver: str = ""
     access_key_id: str = ""
     secret_access_key: str = field(default="", repr=False)
     session_token: str = field(default="", repr=False)
@@ -210,6 +219,16 @@ _ACTIONS_FOR: dict[str, list[str]] = {
 }
 
 
+def requires_aws(action_id: str) -> bool:
+    """Whether executing `action_id` calls AWS, and so needs an STS-backed credential.
+
+    The Kubernetes actions do not: their session policy grants no AWS call, and STS rejects a policy
+    with an empty action list — so assuming a role for them would break every revert the moment a
+    role was configured. Only an action with AWS calls in `_ACTIONS_FOR` is ever assumed for.
+    """
+    return bool(_ACTIONS_FOR.get(action_id))
+
+
 def mint_actor_credential(
     *,
     incident_id: str,
@@ -217,6 +236,7 @@ def mint_actor_credential(
     namespace: str,
     sts_client: Any | None = None,
     role_arn: str | None = None,
+    approver: str | None = None,
 ) -> ActorCredential:
     """Mint the actor principal for one approved action.
 
@@ -229,6 +249,11 @@ def mint_actor_credential(
     offline, no STS call is made and the credential carries empty AWS keys — it still binds
     the incident, action, namespace, TTL and single use, which is what the Kubernetes
     executor checks.
+
+    `approver` is the Slack user id whose click minted this. It rides on the credential so the
+    mutation is attributed to that person in the target system's own audit trail — CloudTrail's
+    `SourceIdentity`, the Kubernetes audit log's `impersonatedUser` — rather than to whichever
+    principal the process runs as.
     """
     caller = _calling_module(depth=2)
     if caller not in MINTING_MODULES:
@@ -241,13 +266,14 @@ def mint_actor_credential(
     expires_at = time.time() + SESSION_TTL_SECONDS
     keys = {"access_key_id": "", "secret_access_key": "", "session_token": ""}
 
-    if sts_client is not None or role_arn is not None:
+    if (sts_client is not None or role_arn is not None) and requires_aws(action_id):
         keys = _assume(
             sts_client,
             role_arn=role_arn,
             namespace=namespace,
             action_id=action_id,
             incident_id=incident_id,
+            approver=approver,
         )
 
     return ActorCredential(
@@ -255,6 +281,7 @@ def mint_actor_credential(
         action_id=action_id,
         namespace=namespace,
         expires_at=expires_at,
+        approver=approver or "",
         _token=_MINT_TOKEN,
         **keys,
     )
@@ -343,6 +370,7 @@ def _assume(
     namespace: str,
     action_id: str,
     incident_id: str,
+    approver: str | None = None,
 ) -> dict[str, str]:
     """The STS call. Session-policy scoped, 900 seconds, one namespace.
 
@@ -365,6 +393,18 @@ def _assume(
 
     import json
 
+    extra: dict[str, Any] = {}
+    if approver:
+        # `SourceIdentity` persists through role chaining and CloudTrail records it on every call,
+        # so the human who approved is on the mutation, not only the incident. Tags carry the rest.
+        # The role's trust policy must allow `sts:SetSourceIdentity` and `sts:TagSession`.
+        extra["SourceIdentity"] = _sts_safe(f"slack-{approver}")[:64]
+        extra["Tags"] = [
+            {"Key": "fazerops:incident", "Value": incident_id[:256]},
+            {"Key": "fazerops:action", "Value": action_id[:256]},
+            {"Key": "fazerops:approver", "Value": _sts_safe(approver)[:256]},
+        ]
+
     response = sts_client.assume_role(
         RoleArn=role_arn,
         # The session name is the audit trail on the AWS side: CloudTrail records it on
@@ -373,6 +413,9 @@ def _assume(
         RoleSessionName=f"fazerops-{incident_id}-{action_id}"[:64],
         Policy=json.dumps(session_policy(namespace, action_id)),
         DurationSeconds=SESSION_TTL_SECONDS,
+        # Names and types validated offline against botocore's STS model (`test_actor_attribution`).
+        # UNVERIFIED (W23): that a real role's trust policy accepts them — `config/aws/README.md`.
+        **extra,
     )
     credentials = response["Credentials"]  # UNVERIFIED (W23) — shape from boto3 typing
     return {
@@ -380,3 +423,29 @@ def _assume(
         "secret_access_key": credentials["SecretAccessKey"],
         "session_token": credentials["SessionToken"],
     }
+
+
+def kubernetes_identity(credential: ActorCredential) -> tuple[str, list[str]]:
+    """The user and groups an approved Kubernetes mutation impersonates.
+
+    The API server records the impersonated identity as `impersonatedUser` on the audit event,
+    which is what `collectors/k8s_audit.py` attributes the change to. Without it every revert
+    FazerOps ran was recorded as the kubeconfig's `system:admin` and came back in the next
+    investigation as an unattributed out-of-band change (drift log, 14 Sep, D3).
+    """
+    from ..ledger.normalize import FAZEROPS_ACTOR_PREFIX
+
+    approver = _k8s_safe(credential.approver) or "unknown"
+    return f"{FAZEROPS_ACTOR_PREFIX}{approver}", [KUBERNETES_ACTOR_GROUP]
+
+
+def _sts_safe(value: str) -> str:
+    import re
+
+    return re.sub(r"[^\w+=,.@-]", "-", value)
+
+
+def _k8s_safe(value: str) -> str:
+    import re
+
+    return re.sub(r"[^A-Za-z0-9_.@-]", "-", value)

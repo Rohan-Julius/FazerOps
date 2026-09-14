@@ -187,3 +187,56 @@ def test_the_demo_release_is_untouched_by_this_module(release):
     history = json.loads(_helm("history", "billing-api", "-n", "billing", "-o", "json") or "[]")
 
     assert [entry["revision"] for entry in history] == [1, 2, 3]
+
+
+def test_an_approved_rollback_is_attributed_to_its_approver(release):
+    """D3 for Helm. Every write `helm rollback` makes — the release record Secret, the Deployment — must
+    reach the audit log as the approver, not as the kubeconfig's `system:admin`.
+
+    The writes checked are every Helm write from the first impersonated one to the last. A wall-clock
+    `since` is not enough: the fixture's `helm install` and `upgrade` run as admin milliseconds before the
+    approval, and a first version of this test counted them as the rollback's (14 Sep)."""
+    import time
+
+    from fazerops.collectors.k8s_audit import K8sAuditCollector, audit_log_path
+    from fazerops.ledger.normalize import FAZEROPS_ACTOR_PREFIX
+
+    since = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - 1))
+    _approve_and_execute(_request(), "INC-E2E-HELM-ATTRIBUTION")
+    expected = f"{FAZEROPS_ACTOR_PREFIX}{IC.user_id}"
+
+    def helm_writes() -> list[dict]:
+        found = []
+        for line in audit_log_path().read_text(encoding="utf-8").splitlines():
+            try:
+                raw = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (
+                raw.get("stage") == "ResponseComplete"
+                and raw.get("requestReceivedTimestamp", "") >= since
+                and (raw.get("objectRef") or {}).get("namespace") == NAMESPACE
+                and raw.get("verb") in ("create", "update", "patch", "delete")
+                and str(raw.get("userAgent", "")).startswith("Helm/")
+            ):
+                found.append(raw)
+        return found
+
+    deadline = time.time() + 15  # the API server flushes the audit log asynchronously
+    while not any((raw.get("impersonatedUser") or {}).get("username") == expected for raw in helm_writes()):
+        assert time.time() < deadline, "no Helm write impersonating the approver — is the RBAC binding applied?"
+        time.sleep(0.5)
+
+    writes = sorted(helm_writes(), key=lambda raw: raw["requestReceivedTimestamp"])
+    impersonated = [raw for raw in writes if (raw.get("impersonatedUser") or {}).get("username") == expected]
+    first, last = impersonated[0]["requestReceivedTimestamp"], impersonated[-1]["requestReceivedTimestamp"]
+    rollback = [raw for raw in writes if first <= raw["requestReceivedTimestamp"] <= last]
+    unattributed = [raw for raw in rollback if raw not in impersonated]
+    assert not unattributed, f"{len(unattributed)} rollback write(s) ran as {unattributed[0]['user'].get('username')}"
+    assert any(
+        (raw.get("objectRef") or {}).get("name", "").startswith("sh.helm.release.v1.") for raw in impersonated
+    ), "the release record itself was written as the approver"
+    writes = rollback
+
+    events = [event for event in map(K8sAuditCollector()._normalize, writes) if event is not None]
+    assert events and all(event.actor.canonical == "fazerops" and event.in_band for event in events)

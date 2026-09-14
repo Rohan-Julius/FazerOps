@@ -98,17 +98,18 @@ def namespaced_params(kind: str) -> Callable[[ResourceRef], dict[str, str] | Non
     return params_for
 
 
-def api_for(kind: str) -> Any:
+def api_for(kind: str, credential: Any = None) -> Any:
+    """The typed API for `kind`, impersonating `credential`'s approver when given one (D3)."""
     from ...config import require_offline_capable
 
     require_offline_capable(f"k8s/{kind}")
 
     from kubernetes import client as k8s_client
-    from kubernetes import config as k8s_config
+
+    from ..k8s_client import api_client
 
     [api_class] = {contract.api_class for (k, _), contract in CONTRACTS.items() if k == kind}
-    k8s_config.load_kube_config()
-    return getattr(k8s_client, api_class)()
+    return getattr(k8s_client, api_class)(api_client(credential))
 
 
 def stand_in_writer(kind: str, field: str = "data") -> WriterSpec:

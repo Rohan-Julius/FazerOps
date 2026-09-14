@@ -1,0 +1,26 @@
+# D3 (drift log, 14 Sep) — what an approved FazerOps execution may do once it impersonates the
+# approver (`actions/k8s_client.py`, `helm --kube-as-user`).
+#
+# The built-in `edit` role covers everything the three catalog actions and the ConfigMap writers
+# touch: ConfigMaps for `revert_configmap_key`, and the Deployments, Services and Secrets (Helm's
+# release records) a `helm rollback` of `charts/billing-api` rewrites. It does not grant RBAC
+# objects, so an impersonated execution cannot widen its own permissions.
+#
+# Cluster-wide on purpose, and stated rather than implied: the namespace an execution may touch is
+# enforced by `require_actor_credential` before any client exists, not by this binding. A
+# per-namespace RoleBinding would have to be created for every namespace an action might ever
+# target, and the e2e suite rolls back releases in namespaces it creates on the fly.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fazerops-actors-edit
+  labels:
+    app.kubernetes.io/managed-by: fazerops
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: "fazerops:actors"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: edit

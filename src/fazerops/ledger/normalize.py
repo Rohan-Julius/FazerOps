@@ -95,6 +95,15 @@ def _parse_helm(text: str) -> datetime:
 # --------------------------------------------------------------------------------------
 
 
+# The principal prefix a FazerOps-executed change carries: the Kubernetes username it impersonates
+# (`security.credentials.kubernetes_identity`) and the STS session name it assumes. Defined here,
+# on the investigation side, because the collectors must recognise it and must not import
+# `security/credentials.py` (plan §3.5).
+FAZEROPS_ACTOR_PREFIX = "fazerops:approved-by:"
+FAZEROPS_SESSION_PREFIX = "fazerops-"
+FAZEROPS_CANONICAL = "fazerops"
+
+
 class IdentityMap:
     """`config/identity_map.yaml`, indexed for lookup by (source, raw principal)."""
 
@@ -115,6 +124,11 @@ class IdentityMap:
     def resolve(self, raw_principal: str, source: ChangeSource) -> Actor:
         canonical = self._index.get((source, raw_principal))
 
+        if canonical is None and _is_fazerops(raw_principal, source):
+            # Recognised by shape rather than listed: the approver is part of the principal, so
+            # no finite list of entries could match. `raw` keeps who approved it.
+            return Actor(raw=raw_principal, canonical=FAZEROPS_CANONICAL, resolved=True, kind="service_account")
+
         if canonical is None:
             return Actor(raw=raw_principal, resolved=False, kind=_infer_kind(raw_principal))
 
@@ -130,6 +144,14 @@ class IdentityMap:
         """Whether the change arrived through the pipeline. Reported to the user, never
         fed to the scorer — Handoff §3 calls boosting out-of-band changes circular."""
         return actor.resolved and actor.canonical in self._in_band
+
+
+def _is_fazerops(raw_principal: str, source: ChangeSource) -> bool:
+    if raw_principal.startswith(FAZEROPS_ACTOR_PREFIX):
+        return True
+    # CloudTrail's principal for an assumed role is the session name, which the actor credential
+    # sets to `fazerops-{incident}-{action}`. Only there: a Kubernetes name may start `fazerops-`.
+    return source == "cloudtrail" and raw_principal.startswith(f"{FAZEROPS_SESSION_PREFIX}INC-")
 
 
 def _infer_kind(raw_principal: str) -> str:

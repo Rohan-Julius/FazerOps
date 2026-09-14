@@ -226,7 +226,13 @@ class K8sAuditCollector(BaseCollector):
             namespace=namespace,
         )
 
-        actor = normalize_actor((raw.get("user") or {}).get("username", ""), "k8s_audit")
+        # An impersonated request is attributed to the identity it acted as: `user` is only the
+        # principal that was allowed to impersonate — for every FazerOps execution, the
+        # kubeconfig's `system:admin`, which named nobody (drift log, 14 Sep, D3).
+        principal = (raw.get("impersonatedUser") or {}).get("username") or (raw.get("user") or {}).get(
+            "username", ""
+        )
+        actor = normalize_actor(principal, "k8s_audit")
         action = normalize_action(raw.get("verb", ""), "k8s_audit")
         diff = self._build_diff(raw, resource.kind)
 
